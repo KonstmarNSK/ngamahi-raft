@@ -1,6 +1,5 @@
 mod basic;
 mod timer;
-mod state;
 
 #[cfg(test)]
 mod tests {

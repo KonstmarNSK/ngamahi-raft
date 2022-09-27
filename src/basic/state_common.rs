@@ -16,7 +16,6 @@ impl NodeState {
     pub fn init(
         other_nodes: OtherNodes,
         this_node_address: NodeAddress,
-        election_timeout: Duration,
     ) -> Self {
         Self::FollowerState(follower::FollowerState {
             node_state: Common {
@@ -24,9 +23,8 @@ impl NodeState {
                 last_committed_log_idx: 0u64,
                 other_nodes,
                 election_favorite_this_term: None,
-                last_time_received_message: Instant::now(),
                 this_node_address,
-                election_timeout,
+                ignore_next_election_timeout_trigger: false,
             }
         })
     }
@@ -39,11 +37,10 @@ pub struct Common {
     // a raft node that this node voted for
     pub election_favorite_this_term: Option<NodeAddress>,
 
-    // last time this node received any message from others
-    pub last_time_received_message: Instant,
-
-    // node starts election if it haven't been receiving any messages for this time
-    pub election_timeout: Duration,
+    // whether to react to next election timeout trigger
+    // for example, if a follower got a message from leader, it writes here "true", and
+    // next time election timeout trigger is fired it will NOT start election
+    pub ignore_next_election_timeout_trigger: bool,
 
     pub other_nodes: OtherNodes,
     pub this_node_address: NodeAddress,

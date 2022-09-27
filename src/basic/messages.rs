@@ -1,4 +1,4 @@
-use crate::basic::state_common;
+use crate::basic::state;
 
 /// Interaction of Raft node (state machine) with outer world, including timer
 pub trait MessageQueue {
@@ -21,7 +21,7 @@ pub enum OutputMessage {
 pub enum RaftMessage {
     Heartbeat,
     AppendEntries,
-    RequestVote { sender_addr: state_common::NodeAddress },
+    RequestVote { sender_addr: state::NodeAddress },
 }
 
 pub enum ControlMessage {

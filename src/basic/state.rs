@@ -1,13 +1,24 @@
 use std::net::IpAddr;
-use std::time::{Duration, Instant};
 
-use super::{candidate, follower, leader};
 
-// todo: rename
+
 pub enum NodeState {
-    LeaderState(leader::LeaderState),
-    CandidateState(candidate::CandidateState),
-    FollowerState(follower::FollowerState),
+    LeaderState(LeaderState),
+    CandidateState(CandidateState),
+    FollowerState(FollowerState),
+}
+
+
+pub struct CandidateState{
+    pub node_state: Common
+}
+
+pub struct FollowerState{
+    pub node_state: Common
+}
+
+pub struct LeaderState{
+    pub node_state: Common
 }
 
 
@@ -17,7 +28,7 @@ impl NodeState {
         other_nodes: OtherNodes,
         this_node_address: NodeAddress,
     ) -> Self {
-        Self::FollowerState(follower::FollowerState {
+        Self::FollowerState(FollowerState {
             node_state: Common {
                 term: 0u64,
                 last_committed_log_idx: 0u64,
@@ -29,6 +40,10 @@ impl NodeState {
         })
     }
 }
+
+
+
+
 
 pub struct Common {
     pub term: u64,

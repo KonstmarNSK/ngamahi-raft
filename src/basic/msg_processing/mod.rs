@@ -1,5 +1,5 @@
 use crate::basic::messages::{InputMessage, OutputMessage};
-use crate::basic::state_common::NodeState;
+use crate::basic::state::NodeState;
 
 mod control_msg;
 mod raft_msg;

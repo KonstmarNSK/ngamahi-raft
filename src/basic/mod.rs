@@ -1,11 +1,8 @@
 use crate::basic::messages::*;
 use crate::basic::msg_processing::process_msg;
-use crate::basic::state_common::*;
+use crate::basic::state::*;
 
-mod leader;
-mod follower;
-mod candidate;
-mod state_common;
+mod state;
 mod messages;
 mod msg_processing;
 

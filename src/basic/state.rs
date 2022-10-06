@@ -1,6 +1,8 @@
 use std::net::IpAddr;
+use crate::basic::messages::OutputMessage;
 
 
+// ========= DATA ===========
 
 pub enum NodeState {
     LeaderState(LeaderState),
@@ -9,53 +11,39 @@ pub enum NodeState {
 }
 
 
-pub struct CandidateState{
-    pub node_state: Common
-}
-
-pub struct FollowerState{
-    pub node_state: Common
-}
-
 pub struct LeaderState{
     pub node_state: Common
 }
 
-
-impl NodeState {
-    // every node starts as follower according to the paper
-    pub fn init(
-        other_nodes: OtherNodes,
-        this_node_address: NodeAddress,
-    ) -> Self {
-        Self::FollowerState(FollowerState {
-            node_state: Common {
-                term: 0u64,
-                last_committed_log_idx: 0u64,
-                other_nodes,
-                election_favorite_this_term: None,
-                this_node_address,
-                ignore_next_election_timeout_trigger: false,
-            }
-        })
-    }
-}
-
-
-
-
-
-pub struct Common {
-    pub term: u64,
-    pub last_committed_log_idx: u64,
-
-    // a raft node that this node voted for
-    pub election_favorite_this_term: Option<NodeAddress>,
+pub struct CandidateState{
+    // count of votes that this node got in the current term
+    pub votes_count: usize,
+    pub leader_address: Option<NodeAddress>,
 
     // whether to react to next election timeout trigger
     // for example, if a follower got a message from leader, it writes here "true", and
     // next time election timeout trigger is fired it will NOT start election
     pub ignore_next_election_timeout_trigger: bool,
+
+    pub node_state: Common
+}
+
+pub struct FollowerState{
+    // a raft node that this node voted for
+    pub election_favorite_this_term: Option<NodeAddress>,
+    pub leader_address: Option<NodeAddress>,
+
+    // whether to react to next election timeout trigger
+    // for example, if a follower got a message from leader, it writes here "true", and
+    // next time election timeout trigger is fired it will NOT start election
+    pub ignore_next_election_timeout_trigger: bool,
+
+    pub node_state: Common
+}
+
+pub struct Common {
+    pub term: u64,
+    pub last_committed_log_idx: u64,
 
     pub other_nodes: OtherNodes,
     pub this_node_address: NodeAddress,
@@ -66,8 +54,67 @@ pub struct OtherNodes {
     addresses: Vec<NodeAddress>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Eq, PartialEq, Copy, Clone)]
 pub struct NodeAddress {
     ip_address: IpAddr,
-    idx: u8,    // used to distinguish nodes with same ip addr (on 1 host). 0 is default value
+}
+
+pub enum Either<TLeft: Sized, TRight: Sized> {
+    Left(TLeft),
+    Right(TRight)
+}
+
+// ========= LOGIC ===========
+
+impl OtherNodes {
+    // todo: think about usize
+    /// returns number of other nodes in cluster. Total number of nodes is count() + 1
+    pub fn count(&self) -> usize {
+        return self.addresses.len()
+    }
+}
+
+
+impl FollowerState {
+    fn init(
+        other_nodes: OtherNodes,
+        this_node_address: NodeAddress,
+    ) -> Self {
+        FollowerState {
+            election_favorite_this_term: None,
+            leader_address: None,
+            ignore_next_election_timeout_trigger: false,
+            node_state: Common::init(
+                other_nodes,
+                this_node_address,
+            ),
+        }
+    }
+}
+
+impl Common {
+    fn init(
+        other_nodes: OtherNodes,
+        this_node_address: NodeAddress,
+    ) -> Self {
+        Common {
+            term: 0u64,
+            last_committed_log_idx: 0u64,
+            other_nodes,
+            this_node_address,
+        }
+    }
+}
+
+impl NodeState {
+    // every node starts as follower according to the paper
+    pub fn init(
+        other_nodes: OtherNodes,
+        this_node_address: NodeAddress,
+    ) -> Self {
+        Self::FollowerState(FollowerState::init(
+            other_nodes,
+            this_node_address,
+        ))
+    }
 }

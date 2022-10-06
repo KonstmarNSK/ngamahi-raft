@@ -18,7 +18,7 @@ pub fn process_msg(
             )
         }
 
-        InputMessage::RaftMsg {message} => {
+        InputMessage::RaftMsg(message) => {
             raft_msg::process_msg(
                 message,
                 node_state,

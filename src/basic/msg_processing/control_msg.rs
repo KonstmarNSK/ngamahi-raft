@@ -1,6 +1,6 @@
 use std::ops::Not;
 use crate::basic::messages::{ControlMessage, OutputMessage, RaftMessage};
-use crate::basic::state::{CandidateState, Common, FollowerState, NodeState};
+use crate::basic::state::{CandidateState, Common, Either, FollowerState, LeaderState, NodeState};
 
 
 /// Process message that isn't specified in Raft paper
@@ -10,7 +10,7 @@ pub fn process_msg(
 ) -> (NodeState, Option<OutputMessage>) {
     return match msg {
         ControlMessage::TriggerHeartbeat => {
-            let msg = process_heartbeat_msg(&node_state);
+            let msg = process_heartbeat_trigger(&node_state);
             (node_state, msg)
         }
 
@@ -19,10 +19,10 @@ pub fn process_msg(
 }
 
 
-fn process_heartbeat_msg(node_state: &NodeState) -> Option<OutputMessage> {
+fn process_heartbeat_trigger(node_state: &NodeState) -> Option<OutputMessage> {
     return match node_state {
-        NodeState::LeaderState(_) =>
-            Some(OutputMessage::RaftMsg { message: RaftMessage::Heartbeat }),
+        NodeState::LeaderState(ref leader_state) =>
+            Some(OutputMessage::RaftMsg { message: RaftMessage::AppendEntries{sender_term: leader_state.node_state.term} }),
 
         _ => None
     };
@@ -33,63 +33,126 @@ fn process_election_trigger(mut node_state: NodeState) -> (NodeState, Option<Out
     return match node_state {
 
         NodeState::FollowerState(follower_state) => {
-            match follower_state.node_state.ignore_next_election_timeout_trigger {
-                // if follower didn't get any message from leader or candidate
-                // since election trigger was fired last time
-                // it becomes a candidate and starts election:
-                false => {
-                    let (candidate_state, raft_msg) = follower_to_candidate(follower_state);
-                    let new_state = NodeState::CandidateState(candidate_state);
-                    let msg = OutputMessage::RaftMsg { message: raft_msg };
 
-                    (new_state, Some(msg))
+            let (mut follower_or_candidate, msg) =
+                follower_state.process_election_trigger();
+
+            let out_msg = msg.map(|m| OutputMessage::RaftMsg {
+                message: m
+            });
+
+            match follower_or_candidate {
+
+                // still a follower, didn't start election
+                Either::Left(f_state) => {
+                    let state = NodeState::FollowerState(f_state);
+                    (state, out_msg)
                 }
 
-                // if a follower got a message recently, it ignores election trigger:
-                true => (NodeState::FollowerState(follower_state), None)
+                // became a candidate and started election
+                Either::Right(mut c_state) => {
+                    let new_state = NodeState::CandidateState(c_state);
+                    (new_state, out_msg)
+                }
             }
         }
 
-        NodeState::CandidateState(candidate_state) => {
-            match candidate_state.node_state.ignore_next_election_timeout_trigger {
 
-                // if a candidate didn't win election in election timeout, it starts new election:
-                false => {
-                    let (new_state, msg) = start_election(candidate_state.node_state);
-                    let new_state = CandidateState { node_state: new_state };
-                    let new_state = NodeState::CandidateState(new_state);
-                    let msg = OutputMessage::RaftMsg { message: msg };
+        NodeState::CandidateState(mut candidate_state) => {
+            let msg = candidate_state.process_election_trigger();
+            let out_msg = Some(OutputMessage::RaftMsg { message: msg });
+            let new_state = NodeState::CandidateState(candidate_state);
 
-                    (new_state, Some(msg))
-                }
-
-                true => (NodeState::CandidateState(candidate_state), None)
-            }
+            (new_state, out_msg)
         }
 
+        // leader doesn't react on election timeout trigger
         NodeState::LeaderState(_) => {
-            // leader doesn't react on election timeout trigger
             (node_state, None)
         }
     };
+
 }
 
 
-fn follower_to_candidate(follower_state: FollowerState) -> (CandidateState, RaftMessage) {
-    let (new_state, msg) = start_election(follower_state.node_state);
 
-    (CandidateState { node_state: new_state }, msg)
+
+
+
+// ========== IMPLS ==========
+
+
+
+// FOLLOWER
+
+impl FollowerState {
+    // todo: pre-vote stage
+    /// Starts election and becomes a candidate unless it got a valid message from leader recently
+    fn process_election_trigger(self) -> (Either<FollowerState, CandidateState>, Option<RaftMessage>) {
+        return match &self.ignore_next_election_timeout_trigger {
+            true => (Either::Left(self), None),
+            false => {
+                let (new_state, msg) = elect(self);
+                return (Either::Right(new_state), Some(msg));
+            }
+        };
+
+        fn elect(follower_state: FollowerState) -> (CandidateState, RaftMessage) {
+
+            // transfer to candidate state
+            let mut candidate_state: CandidateState = follower_state.into();
+            let msg = start_election(&mut candidate_state);
+
+            (candidate_state, msg)
+        }
+    }
 }
 
 
-fn start_election(mut state: Common) -> (Common, RaftMessage) {
+
+
+// CANDIDATE
+
+/// transfer to candidate state
+impl From<FollowerState> for CandidateState {
+    fn from(follower_state: FollowerState) -> Self {
+        CandidateState {
+            ignore_next_election_timeout_trigger: follower_state.ignore_next_election_timeout_trigger,
+            leader_address: follower_state.leader_address,
+            votes_count: 0,
+            node_state: follower_state.node_state
+        }
+    }
+}
+
+impl CandidateState {
+    /// If a candidate didn't get enough votes (N/2 + 1), it starts a new election.
+    ///
+    /// A candidate can get an ElectionTimeoutTrigger only if it didn't get enough messages within
+    /// an election timeout (otherwise it would be a leader or follower already),
+    /// so we just start a new  election without any checks
+    fn process_election_trigger(&mut self) -> RaftMessage {
+        start_election(self)
+    }
+}
+
+fn start_election(candidate_state: &mut CandidateState) -> RaftMessage {
+
     // increment term:
-    state.term = state.term + 1;
+    candidate_state.node_state.term += 1;
+
+    // vote for self:
+    candidate_state.votes_count = 1;
 
     // and send RequestVote message to other nodes
-    let out_msg = RaftMessage::RequestVote {
-        sender_addr: state.this_node_address
-    };
-
-    (state, out_msg)
+    RaftMessage::RequestVote {
+        sender_term: candidate_state.node_state.term,
+        sender_addr: candidate_state.node_state.this_node_address
+    }
 }
+
+
+
+
+
+// LEADER

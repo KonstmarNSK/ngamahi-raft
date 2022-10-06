@@ -7,7 +7,6 @@ mod messages;
 mod msg_processing;
 
 
-
 /// The Raft node (state machine)
 ///
 /// Reacts to messages, changes its state, sends messages.

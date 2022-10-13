@@ -1,4 +1,6 @@
 use std::net::IpAddr;
+use crate::basic::common_types::Term;
+use crate::basic::log::RaftLog;
 use crate::basic::messages::OutputMessage;
 
 
@@ -12,7 +14,7 @@ pub enum NodeState {
 
 
 pub struct LeaderState{
-    pub node_state: Common
+    pub common: Common,
 }
 
 pub struct CandidateState{
@@ -25,7 +27,7 @@ pub struct CandidateState{
     // next time election timeout trigger is fired it will NOT start election
     pub ignore_next_election_timeout_trigger: bool,
 
-    pub node_state: Common
+    pub common: Common
 }
 
 pub struct FollowerState{
@@ -38,12 +40,12 @@ pub struct FollowerState{
     // next time election timeout trigger is fired it will NOT start election
     pub ignore_next_election_timeout_trigger: bool,
 
-    pub node_state: Common
+    pub common: Common
 }
 
 pub struct Common {
-    pub term: u64,
-    pub last_committed_log_idx: u64,
+    pub term: Term,
+    pub log: RaftLog,
 
     pub other_nodes: OtherNodes,
     pub this_node_address: NodeAddress,
@@ -63,6 +65,9 @@ pub enum Either<TLeft: Sized, TRight: Sized> {
     Left(TLeft),
     Right(TRight)
 }
+
+
+
 
 // ========= LOGIC ===========
 
@@ -84,7 +89,7 @@ impl FollowerState {
             election_favorite_this_term: None,
             leader_address: None,
             ignore_next_election_timeout_trigger: false,
-            node_state: Common::init(
+            common: Common::init(
                 other_nodes,
                 this_node_address,
             ),
@@ -98,10 +103,10 @@ impl Common {
         this_node_address: NodeAddress,
     ) -> Self {
         Common {
-            term: 0u64,
-            last_committed_log_idx: 0u64,
+            term: Term::default(),
             other_nodes,
             this_node_address,
+            log: RaftLog::default(),
         }
     }
 }
@@ -116,5 +121,30 @@ impl NodeState {
             other_nodes,
             this_node_address,
         ))
+    }
+}
+
+
+// ===== From impls =============
+
+impl From<LeaderState> for FollowerState {
+    fn from(leader: LeaderState) -> Self {
+        FollowerState{
+            election_favorite_this_term: None,
+            leader_address: None,
+            ignore_next_election_timeout_trigger: false,
+            common: leader.common
+        }
+    }
+}
+
+impl From<CandidateState> for FollowerState {
+    fn from(candidate: CandidateState) -> Self {
+        FollowerState{
+            election_favorite_this_term: None,
+            leader_address: None,
+            ignore_next_election_timeout_trigger: false,
+            common: candidate.common
+        }
     }
 }

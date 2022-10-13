@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
-use crate::basic::messages::{OutputMessage, RaftMessage};
+use std::os::linux::raw::stat;
+use crate::basic::common_types::{LogMsgIdx, Term};
+use crate::basic::messages::{AppendEntriesMsg, AppendEntriesResp, get_term, OutputMessage, RaftMessage};
 use crate::basic::state::{CandidateState, Common, FollowerState, LeaderState, NodeState};
 
 
@@ -9,89 +11,79 @@ pub fn process_msg(
     mut node_state: NodeState,
 ) -> (NodeState, Option<OutputMessage>) {
     return match msg {
-        RaftMessage::AppendEntries { sender_term } => todo!(),
-
-        RaftMessage::RequestVote { sender_term, sender_addr } => todo!()
+        RaftMessage::AppendEntries( m) => todo!(),
+        RaftMessage::AppendEntriesResp( m ) => todo!(),
+        RaftMessage::RequestVote ( m ) => todo!()
     };
 }
 
 
-/// Compare message sender's term with this node's one
-fn check_term(msg: &RaftMessage, mut node_state: NodeState) -> (NodeState, Option<OutputMessage>) {
-    return match node_state {
+impl FollowerState {
 
-        // if leader gets a message with higher term than its own, it immediately becomes a follower
-        NodeState::LeaderState(leader_state) => {
-            match leader_state.node_state.term < get_term(msg) {
-                true => (leader_to_follower(leader_state), None),
-                false => (NodeState::LeaderState(leader_state), None)
+    fn process_append_entries_msg(&mut self, msg: &AppendEntriesMsg) -> RaftMessage {
+
+        self.common.term = match check_term(self, msg) {
+            Err(resp) => return RaftMessage::AppendEntriesResp(resp),
+            Ok(term) => term
+        };
+
+        return RaftMessage::AppendEntriesResp(match is_log_consistent(self, msg) {
+            true => append_entries(self, msg),
+            false => AppendEntriesResp {
+                sender_term: self.common.term,
+                success: false,
+            }
+        });
+
+
+
+
+        /// Leader sent its term in the AppendEntries message
+        /// Leader's term must be at least as big as follower's
+        ///
+        /// returns either new term if check succeeded or message to leader with negative response
+        fn check_term(state: &FollowerState, msg: &AppendEntriesMsg) -> Result<Term, AppendEntriesResp> {
+            use Ordering::*;
+
+            match msg.sender_term.cmp(&state.common.term) {
+                Less => Err(AppendEntriesResp {
+                    sender_term: state.common.term,
+                    success: false,
+                }),
+
+                Equal | Greater => Ok(msg.sender_term)
             }
         }
 
-        // if a candidate gets a message with term that is equal to or greater than its own,
-        // it immediately becomes a follower
-        NodeState::CandidateState(candidate_state) => {
-            match candidate_state.node_state.term <= get_term(msg) {
-                true => (candidate_to_follower(candidate_state), None),
-                false => (NodeState::CandidateState(candidate_state), None)
+        fn is_log_consistent(state: &FollowerState, msg: &AppendEntriesMsg) -> bool {
+            match state.common.log.get_entry_term_by_idx(msg.prev_log_index) {
+                Some(term) if term == msg.prev_log_term => true,
+                _ => false
             }
         }
 
-        NodeState::FollowerState(_) => (node_state, None)
-    };
+        fn append_entries(state: &mut FollowerState, msg: &AppendEntriesMsg) -> AppendEntriesResp {
+            let entries_to_append = &msg.content;
 
+            state.common.log.force_append(entries_to_append);
 
-    fn leader_to_follower(leader_state: LeaderState) -> NodeState {
-        NodeState::FollowerState(
-            FollowerState {
-                node_state: leader_state.node_state,
-
-                leader_address: None,
-                election_favorite_this_term: None,
-                ignore_next_election_timeout_trigger: false,
+            AppendEntriesResp {
+                success: true,
+                sender_term: state.common.term
             }
-        )
+        }
+
+        /*
+        Reply false if term < currentTerm (§5.1)
+        2. Reply false if log doesn't contain an entry at prevLogIndex
+        whose term matches prevLogTerm (§5.3)
+        3. If an existing entry conflicts with a new one (same index
+        but different terms), delete the existing entry and all that
+        follow it (§5.3)
+        4. Append any new entries not already in the log
+        5. If leaderCommit > commitIndex, set commitIndex =
+        min(leaderCommit, index of last new entry)
+         */
     }
 
-    fn candidate_to_follower(candidate_state: CandidateState) -> NodeState {
-        NodeState::FollowerState(
-            FollowerState {
-                node_state: candidate_state.node_state,
-
-                leader_address: None,
-                election_favorite_this_term: None,
-                ignore_next_election_timeout_trigger: false,
-            }
-        )
-    }
-}
-
-
-fn get_term(msg: &RaftMessage) -> u64 {
-    return match msg {
-        RaftMessage::RequestVote { sender_term, .. }
-        | RaftMessage::AppendEntries { sender_term } => sender_term.to_owned()
-    };
-}
-
-// todo: check terms and committed msg idx
-fn process_heartbeat_msg(mut node_state: NodeState) -> NodeState {
-    match node_state {
-
-        // follower remembers that it got a heartbeat message
-        NodeState::FollowerState(ref mut follower_state) => {
-            follower_state.ignore_next_election_timeout_trigger = true;
-
-            node_state
-        }
-
-        NodeState::CandidateState(ref mut candidate_state) => {
-            candidate_state.ignore_next_election_timeout_trigger = true;
-
-            node_state
-        }
-
-        // leader ignores heartbeats
-        NodeState::LeaderState(_) => node_state
-    }
 }

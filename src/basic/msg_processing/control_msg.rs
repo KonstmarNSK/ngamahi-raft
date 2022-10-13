@@ -1,5 +1,6 @@
 use std::ops::Not;
-use crate::basic::messages::{ControlMessage, OutputMessage, RaftMessage};
+use crate::basic::common_types::Term;
+use crate::basic::messages::{AppendEntriesMsg, ControlMessage, OutputMessage, RaftMessage, RequestVoteMsg};
 use crate::basic::state::{CandidateState, Common, Either, FollowerState, LeaderState, NodeState};
 
 
@@ -9,20 +10,32 @@ pub fn process_msg(
     mut node_state: NodeState,
 ) -> (NodeState, Option<OutputMessage>) {
     return match msg {
+        ControlMessage::TriggerElection => process_election_trigger(node_state),
         ControlMessage::TriggerHeartbeat => {
-            let msg = process_heartbeat_trigger(&node_state);
-            (node_state, msg)
-        }
-
-        ControlMessage::TriggerElection => process_election_trigger(node_state)
+            let out = process_heartbeat_trigger(&node_state);
+            (node_state, out)
+        },
     };
 }
 
 
 fn process_heartbeat_trigger(node_state: &NodeState) -> Option<OutputMessage> {
     return match node_state {
-        NodeState::LeaderState(ref leader_state) =>
-            Some(OutputMessage::RaftMsg { message: RaftMessage::AppendEntries{sender_term: leader_state.node_state.term} }),
+        NodeState::LeaderState(leader_state) => {
+            let (last_msg_idx, last_msg_term) = leader_state.common.log.get_last_msg_info();
+            let (last_committed_msg_idx, _) = leader_state.common.log.get_last_committed_info();
+
+            Some(OutputMessage::RaftMsg {
+                message: RaftMessage::AppendEntries(AppendEntriesMsg {
+                    sender_term: leader_state.common.term,
+                    content: vec![],
+                    leader_commit: last_committed_msg_idx,
+                    leader_id: leader_state.common.this_node_address,
+                    prev_log_index: last_msg_idx,
+                    prev_log_term: last_msg_term,
+                })
+            })
+        }
 
         _ => None
     };
@@ -32,15 +45,16 @@ fn process_heartbeat_trigger(node_state: &NodeState) -> Option<OutputMessage> {
 fn process_election_trigger(mut node_state: NodeState) -> (NodeState, Option<OutputMessage>) {
     return match node_state {
 
+        // tell a follower about election timeout trigger
         NodeState::FollowerState(follower_state) => {
-
             let (mut follower_or_candidate, msg) =
                 follower_state.process_election_trigger();
 
-            let out_msg = msg.map(|m| OutputMessage::RaftMsg {
-                message: m
-            });
+            let out_msg = msg.map(|m|
+                OutputMessage::RaftMsg { message: m }
+            );
 
+            // see whether a follower became a candidate or not
             match follower_or_candidate {
 
                 // still a follower, didn't start election
@@ -57,7 +71,6 @@ fn process_election_trigger(mut node_state: NodeState) -> (NodeState, Option<Out
             }
         }
 
-
         NodeState::CandidateState(mut candidate_state) => {
             let msg = candidate_state.process_election_trigger();
             let out_msg = Some(OutputMessage::RaftMsg { message: msg });
@@ -71,16 +84,10 @@ fn process_election_trigger(mut node_state: NodeState) -> (NodeState, Option<Out
             (node_state, None)
         }
     };
-
 }
 
 
-
-
-
-
 // ========== IMPLS ==========
-
 
 
 // FOLLOWER
@@ -109,8 +116,6 @@ impl FollowerState {
 }
 
 
-
-
 // CANDIDATE
 
 /// transfer to candidate state
@@ -120,7 +125,7 @@ impl From<FollowerState> for CandidateState {
             ignore_next_election_timeout_trigger: follower_state.ignore_next_election_timeout_trigger,
             leader_address: follower_state.leader_address,
             votes_count: 0,
-            node_state: follower_state.node_state
+            common: follower_state.common,
         }
     }
 }
@@ -139,20 +144,19 @@ impl CandidateState {
 fn start_election(candidate_state: &mut CandidateState) -> RaftMessage {
 
     // increment term:
-    candidate_state.node_state.term += 1;
+    candidate_state.common.term.increment();
 
     // vote for self:
     candidate_state.votes_count = 1;
 
     // and send RequestVote message to other nodes
-    RaftMessage::RequestVote {
-        sender_term: candidate_state.node_state.term,
-        sender_addr: candidate_state.node_state.this_node_address
-    }
+    RaftMessage::RequestVote(
+        RequestVoteMsg {
+            sender_term: candidate_state.common.term,
+            sender_addr: candidate_state.common.this_node_address,
+        }
+    )
 }
-
-
-
 
 
 // LEADER

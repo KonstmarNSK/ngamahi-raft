@@ -5,6 +5,8 @@ use crate::basic::state::*;
 mod state;
 mod messages;
 mod msg_processing;
+mod log;
+mod common_types;
 
 
 /// The Raft node (state machine)

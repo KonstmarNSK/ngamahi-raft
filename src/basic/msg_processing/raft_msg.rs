@@ -1,8 +1,8 @@
 use std::cmp::Ordering;
-use std::os::linux::raw::stat;
 use crate::basic::common_types::{LogMsgIdx, Term};
 use crate::basic::messages::{AppendEntriesMsg, AppendEntriesResp, get_term, OutputMessage, RaftMessage};
 use crate::basic::state::{CandidateState, Common, FollowerState, LeaderState, NodeState};
+use crate::basic::log::{entries_to_append, not_empty_slice};
 
 
 /// Process message that IS specified in Raft paper
@@ -55,6 +55,9 @@ impl FollowerState {
             }
         }
 
+        // If this node's log contains an entry with same term and index as those of an entry in
+        // leader's log right before those new that the leader wants to append (prev_log_term and prev_log_index),
+        // the log consistency check is passed and failed otherwise.
         fn is_log_consistent(state: &FollowerState, msg: &AppendEntriesMsg) -> bool {
             match state.common.log.get_entry_term_by_idx(msg.prev_log_index) {
                 Some(term) if term == msg.prev_log_term => true,
@@ -63,9 +66,14 @@ impl FollowerState {
         }
 
         fn append_entries(state: &mut FollowerState, msg: &AppendEntriesMsg) -> AppendEntriesResp {
-            let entries_to_append = &msg.content;
 
-            state.common.log.force_append(entries_to_append);
+            if let Some(entries) = not_empty_slice::NotEmptySlice::new(&msg.content) {
+                let entries = entries_to_append::EntriesToAppend::new(
+                    entries, msg.prev_log_term, msg.prev_log_index
+                ).unwrap(); // todo: process result properly
+
+                state.common.log.force_append(entries);
+            }
 
             AppendEntriesResp {
                 success: true,
@@ -74,9 +82,6 @@ impl FollowerState {
         }
 
         /*
-        Reply false if term < currentTerm (§5.1)
-        2. Reply false if log doesn't contain an entry at prevLogIndex
-        whose term matches prevLogTerm (§5.3)
         3. If an existing entry conflicts with a new one (same index
         but different terms), delete the existing entry and all that
         follow it (§5.3)

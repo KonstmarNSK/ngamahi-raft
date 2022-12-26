@@ -2,14 +2,16 @@ use crate::message::{InputMessage, OutputMessage, RaftRpcReq};
 use crate::state::{State, Types};
 
 mod process_append_entries;
+mod process_request_vote;
 
 pub fn process_msg<TTypes: Types>(state: State<TTypes>, message: InputMessage<TTypes>)
                                   -> (State<TTypes>, OutputMessage<TTypes>) {
-    match message {
-        InputMessage::RaftMessage(RaftRpcReq::AppendEntries(append_entr_req)) => {
-            process_append_entries::
-        },
-
-        _ => {}
-    }
+    // match message {
+    //     InputMessage::RaftMessage(RaftRpcReq::AppendEntries(append_entr_req)) => {
+    //         process_append_entries::
+    //     },
+    //
+    //     _ => {}
+    // }
+    todo!()
 }

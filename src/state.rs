@@ -20,11 +20,15 @@ pub trait Types {
     type TCmd: Command;
 }
 
+pub type RaftLog<TTypes: Types> = Vec<LogEntry<TTypes::TCmd>>;
+
 pub struct PersistentCommonState<TTypes: Types> {
     pub this_node_id: NodeId,
     pub current_term: RaftTerm,
     pub voted_for: Option<NodeId>,
-    pub log: Vec<LogEntry<TTypes::TCmd>>,
+    pub log: RaftLog<TTypes>,
+
+    pub last_msg_term: RaftTerm, // raft paper doesn't contain this. Here we remember term of last msg in log
 }
 
 impl<TTypes: Types> PersistentCommonState<TTypes> {
@@ -34,6 +38,8 @@ impl<TTypes: Types> PersistentCommonState<TTypes> {
             current_term: RaftTerm(0),
             voted_for: None,
             log: vec![],
+
+            last_msg_term: RaftTerm(0)
         }
     }
 }

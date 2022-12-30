@@ -18,6 +18,7 @@ pub trait Command {}
 
 pub trait Types {
     type TCmd: Command;
+    type TStateMachine: StateMachine<Self>;
 }
 
 pub type RaftLog<TTypes: Types> = Vec<LogEntry<TTypes::TCmd>>;
@@ -29,17 +30,25 @@ pub struct PersistentCommonState<TTypes: Types> {
     pub log: RaftLog<TTypes>,
 
     pub last_msg_term: RaftTerm, // raft paper doesn't contain this. Here we remember term of last msg in log
+    pub state_machine: TTypes::TStateMachine,
+}
+
+impl <TTypes: Types> PersistentCommonState<TTypes> {
+    pub fn apply_commands(&mut self, start: usize, end: usize) {
+        self.state_machine.apply_commands(&self.log[start..end])
+    }
 }
 
 impl<TTypes: Types> PersistentCommonState<TTypes> {
-    fn new(node_id: NodeId) -> Self {
+    fn new(node_id: NodeId, state_machine: TTypes::TStateMachine) -> Self {
         PersistentCommonState {
             this_node_id: node_id,
             current_term: RaftTerm(0),
             voted_for: None,
             log: vec![],
 
-            last_msg_term: RaftTerm(0)
+            last_msg_term: RaftTerm(0),
+            state_machine,
         }
     }
 }
@@ -61,6 +70,11 @@ pub enum State<TTypes: Types> {
     Leader(Leader<TTypes>),
 }
 
+// underlying state machine (implemented in user code)
+pub trait StateMachine <TTypes: Types>{
+    fn apply_commands(&mut self, commands: &[TTypes::TCmd]);
+}
+
 pub struct Follower<TTypes: Types>{
     pub common_state: CommonState<TTypes>
 }
@@ -79,7 +93,7 @@ pub struct Leader <TTypes: Types> {
 
 pub struct InitParams<TTypes: Types> {
     // read from hdd
-    pub persisted_state: Option<PersistentCommonState<TTypes>>,
+    pub persisted_state: PersistentCommonState<TTypes>,
     // this node's id
     pub node_id: NodeId,
 }
@@ -92,15 +106,15 @@ pub struct RaftNode<TTypes: Types> {
 impl<TTypes: Types> RaftNode<TTypes> {
     pub fn new(node_id: NodeId, mut params: InitParams<TTypes>) -> Self {
         RaftNode{
-            state: State::new(node_id, params.persisted_state.take())
+            state: State::new(node_id, params.persisted_state)
         }
     }
 }
 
 impl<TTypes: Types> State<TTypes> {
-    fn new(node_id: NodeId, persisted_state: Option<PersistentCommonState<TTypes>>) -> Self {
+    fn new(node_id: NodeId, persisted_state: PersistentCommonState<TTypes>) -> Self {
         State {
-            cluster_role: State::Follower(Follower::new(node_id, persisted_state))
+            cluster_role: State::Follower(Follower::new(persisted_state))
         }
     }
 
@@ -134,18 +148,29 @@ impl<TTypes: Types> State<TTypes> {
             Self::Follower(_) => Self
         }
     }
+
+    pub fn apply_commands(&mut self) {
+        let start = self.common().common_volatile.last_applied;
+        let end = self.common().common_volatile.committed_idx;
+
+        if start < end {
+            self.common_mut().common_persistent.apply_commands(start, end);
+        }
+
+        self.common_mut().common_volatile.last_applied = end;
+    }
 }
 
 impl<TTypes: Types> Follower<TTypes> {
-    fn new(node_id: NodeId, persisted_state: Option<PersistentCommonState<TTypes>>) -> Self {
-        Follower{ common_state: CommonState::new(node_id, persisted_state) }
+    fn new(persisted_state: PersistentCommonState<TTypes>) -> Self {
+        Follower{ common_state: CommonState::new(persisted_state) }
     }
 }
 
 impl<TTypes: Types> CommonState<TTypes> {
-    fn new(node_id: NodeId, persisted_state: Option<PersistentCommonState<TTypes>>) -> Self {
+    fn new(persisted_state: PersistentCommonState<TTypes>) -> Self {
         CommonState {
-            common_persistent: persisted_state.unwrap_or(PersistentCommonState::new(node_id)),
+            common_persistent: persisted_state,
             common_volatile: VolatileCommonState::default(),
         }
     }

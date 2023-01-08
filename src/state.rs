@@ -4,6 +4,7 @@ use std::net::IpAddr;
 #[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
 pub struct RaftTerm(u64);
 
+#[derive(Copy, Clone)]
 pub struct NodeId {
     pub address: IpAddr,
     pub cluster_id: u64,
@@ -29,11 +30,12 @@ pub struct PersistentCommonState<TTypes: Types> {
     pub voted_for: Option<NodeId>,
     pub log: RaftLog<TTypes>,
 
-    pub last_msg_term: RaftTerm, // raft paper doesn't contain this. Here we remember term of last msg in log
+    pub last_msg_term: RaftTerm,
+    // raft paper doesn't contain this. Here we remember term of last msg in log
     pub state_machine: TTypes::TStateMachine,
 }
 
-impl <TTypes: Types> PersistentCommonState<TTypes> {
+impl<TTypes: Types> PersistentCommonState<TTypes> {
     pub fn apply_commands(&mut self, start: usize, end: usize) {
         self.state_machine.apply_commands(&self.log[start..end])
     }
@@ -71,18 +73,22 @@ pub enum State<TTypes: Types> {
 }
 
 // underlying state machine (implemented in user code)
-pub trait StateMachine <TTypes: Types>{
+pub trait StateMachine<TTypes: Types> {
     fn apply_commands(&mut self, commands: &[TTypes::TCmd]);
 }
 
-pub struct Follower<TTypes: Types>{
-    pub common_state: CommonState<TTypes>
-}
-pub struct Candidate <TTypes: Types> {
-    pub common_state: CommonState<TTypes>
+pub struct Follower<TTypes: Types> {
+    pub common_state: CommonState<TTypes>,
+
+    // whether to react to next election timer
+    pub trigger_election_next_time: bool,
 }
 
-pub struct Leader <TTypes: Types> {
+pub struct Candidate<TTypes: Types> {
+    pub common_state: CommonState<TTypes>,
+}
+
+pub struct Leader<TTypes: Types> {
     pub common_state: CommonState<TTypes>,
 
     // following fields must be re-initialized after elections
@@ -105,7 +111,7 @@ pub struct RaftNode<TTypes: Types> {
 
 impl<TTypes: Types> RaftNode<TTypes> {
     pub fn new(node_id: NodeId, mut params: InitParams<TTypes>) -> Self {
-        RaftNode{
+        RaftNode {
             state: State::new(node_id, params.persisted_state)
         }
     }
@@ -135,14 +141,15 @@ impl<TTypes: Types> State<TTypes> {
         }
     }
 
+    // fixme: must be implemented as From trait
     pub fn into_follower(self) -> Self {
         match self {
             Self::Leader(leader_state) => Self::Follower(
-                Follower{ common_state: leader_state.common_state }
+                Follower { common_state: leader_state.common_state, trigger_election_next_time: true }
             ),
 
             Self::Candidate(candidate_state) => Self::Follower(
-                Follower{ common_state: candidate_state.common_state }
+                Follower { common_state: candidate_state.common_state, trigger_election_next_time: true }
             ),
 
             Self::Follower(_) => Self
@@ -163,7 +170,12 @@ impl<TTypes: Types> State<TTypes> {
 
 impl<TTypes: Types> Follower<TTypes> {
     fn new(persisted_state: PersistentCommonState<TTypes>) -> Self {
-        Follower{ common_state: CommonState::new(persisted_state) }
+        Follower { common_state: CommonState::new(persisted_state), trigger_election_next_time: true }
+    }
+
+    // todo: must be implemented as From trait
+    pub fn into_candidate(self) -> Candidate<TTypes> {
+        Candidate { common_state: self.common_state }
     }
 }
 

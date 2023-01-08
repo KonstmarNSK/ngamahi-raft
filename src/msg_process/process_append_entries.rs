@@ -25,7 +25,7 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
 
         // if term in message is less than this node's one
         if curr_term > &message.term {
-            return (state, OutputMessage::RaftMessage(reply_false(curr_term)))
+            return (state, OutputMessage::RaftResp(reply_false(curr_term)))
         }
 
         // if term in message is greater than this node's one
@@ -40,7 +40,7 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
     // whose term matches prevLogTerm
     match state.common_mut().common_persistent.log.get(message.prev_log_idx) {
          Some(log_entry) if log_entry.term == message.prev_log_term => (),
-         _ => return (state, OutputMessage::RaftMessage(reply_false(curr_term)))
+         _ => return (state, OutputMessage::RaftResp(reply_false(curr_term)))
     }
 
     /*
@@ -57,7 +57,7 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
         state.common_mut().common_volatile.committed_idx = message.leader_commit_idx;
     }
 
-    return (state, OutputMessage::RaftMessage(reply_true(curr_term)))
+    return (state, OutputMessage::RaftResp(reply_true(curr_term)))
 }
 
 

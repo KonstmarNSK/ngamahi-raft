@@ -1,11 +1,19 @@
 use crate::state::{LogEntry, NodeId, RaftTerm, Types};
 
 pub enum InputMessage<TTypes: Types> {
-    RaftMessage(RaftRpcReq<TTypes>)
+    RaftMessage(RaftRpcReq<TTypes>),
+    TimerMsg(TimerMessage)
 }
 
 pub enum OutputMessage<TTypes: Types> {
-    RaftMessage(RaftRpcResp)
+    RaftReq(RaftRpcReq<TTypes>),
+    RaftResp(RaftRpcResp)
+}
+
+
+pub enum TimerMessage {
+    TriggerHeartbeat,
+    TriggerElections
 }
 
 

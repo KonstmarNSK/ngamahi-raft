@@ -14,7 +14,6 @@ pub enum InputMessage<TTypes: Types> {
 pub enum OutputMessage<TTypes: Types> {
     RaftReq(RaftRpcReq<TTypes>),
     RaftResp(RaftRpcResp),
-    None
 }
 
 
@@ -25,7 +24,7 @@ pub enum TimerMessage {
 
 
 pub enum RaftRpcReq<TTypes: Types> {
-    AppendEntries(AppendEntriesReq<TTypes>),
+    AppendEntries{ addressee: NodeId, req: AppendEntriesReq<TTypes>},
     ReqVote(RequestVoteReq)
 }
 

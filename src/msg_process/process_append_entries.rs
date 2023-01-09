@@ -5,7 +5,7 @@ use crate::state::State::*;
 use crate::state::{Leader, Follower, Candidate};
 
 pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendEntriesReq<TTypes>)
-                                  -> (State<TTypes>, OutputMessage<TTypes>) {
+                                  -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
 
     let node_id = state.common().common_persistent.this_node_id;
 
@@ -28,7 +28,7 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
 
         // if term in message is less than this node's one
         if &curr_term > &message.term {
-            return (state, OutputMessage::RaftResp(reply_false(curr_term, node_id)))
+            return (state, vec![OutputMessage::RaftResp(reply_false(curr_term, node_id))])
         }
 
         // if term in message is greater than this node's one
@@ -43,7 +43,7 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
     // whose term matches prevLogTerm
     match state.common_mut().common_persistent.log.get(message.prev_log_idx) {
          Some(log_entry) if log_entry.term == message.prev_log_term => (),
-         _ => return (state, OutputMessage::RaftResp(reply_false(curr_term, node_id)))
+         _ => return (state, vec![OutputMessage::RaftResp(reply_false(curr_term, node_id))])
     }
 
     /*
@@ -60,14 +60,14 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
         state.common_mut().common_volatile.committed_idx = message.leader_commit_idx;
     }
 
-    return (state, OutputMessage::RaftResp(reply_true(curr_term, node_id)))
+    return (state, vec![OutputMessage::RaftResp(reply_true(curr_term, node_id))])
 }
 
 
 fn reply_false(curr_term: RaftTerm, sender: NodeId) -> RaftRpcResp {
-    RaftRpcResp::AppendEntries { term: curr_term, success: false, sender_id: sender}
+    RaftRpcResp::AppendEntries {  term: curr_term, success: false, sender_id: sender}
 }
 
 fn reply_true(curr_term: RaftTerm, sender: NodeId) -> RaftRpcResp {
-    RaftRpcResp::AppendEntries { term: curr_term, success: true, sender_id: sender}
+    RaftRpcResp::AppendEntries {   term: curr_term, success: true, sender_id: sender}
 }

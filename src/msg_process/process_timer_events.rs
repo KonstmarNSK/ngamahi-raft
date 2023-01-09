@@ -1,12 +1,10 @@
 use crate::message::{AppendEntriesReq, OutputMessage, RaftRpcReq, RequestVoteReq, TimerMessage};
 use crate::message::OutputMessage::RaftResp;
 use crate::message::RaftRpcResp::RequestVote;
-use crate::state::{Candidate, Follower, Leader, State, Types};
+use crate::state::{Candidate, Follower, Leader, NodeId, State, Types};
 
 pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, message: TimerMessage)
-                                  -> (State<TTypes>, OutputMessage<TTypes>) {
-
-
+                                  -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
     todo!()
 }
 
@@ -14,12 +12,28 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, message: TimerMessag
 fn process_heartbeat_trigger<TTypes: Types>(state: &Leader<TTypes>) -> OutputMessage<TTypes> {
     use crate::msg_process::heartbeat_msg;
 
-    OutputMessage::RaftReq(RaftRpcReq::AppendEntries(heartbeat_msg(state)))
+    let last_log_idx = state.common_state.common_persistent.log.len();
+
+    // looking for nodes whose log indexes aren't up-to-date
+    let nodes: Vec<(NodeId, usize)> = state.next_idx.iter()
+        .filter_map(|(&id, &idx)| {
+            if idx <= last_log_idx {
+                Some((id, idx))
+            } else {
+                None
+            }
+        } )
+        .collect();
+
+    todo!()
+
+    // nodes
+    //
+    // OutputMessage::RaftReq(RaftRpcReq::AppendEntries(heartbeat_msg(state)))
 }
 
 
-
-enum FollowerOrCandidate<TTypes: Types>{
+enum FollowerOrCandidate<TTypes: Types> {
     Follower(Follower<TTypes>),
     Candidate(Candidate<TTypes>),
 }
@@ -65,7 +79,7 @@ fn start_election<TTypes: Types>(mut state: Candidate<TTypes>) -> (State<TTypes>
         term: new_term,
         candidate_id: this_node_id,
         last_log_index,
-        last_log_term
+        last_log_term,
     });
 
     return (State::Candidate(state), OutputMessage::RaftReq(req_vote_msg));

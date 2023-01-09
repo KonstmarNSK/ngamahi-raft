@@ -7,15 +7,15 @@ mod process_timer_events;
 
 
 pub fn process_msg<TTypes: Types>(state: State<TTypes>, message: InputMessage<TTypes>)
-                                  -> (State<TTypes>, OutputMessage<TTypes>) {
+                                  -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
 
     let (mut state, msg) = match message {
 
         InputMessage::RaftRequest(req) => {
             match req {
-                RaftRpcReq::AppendEntries(append) => {
-                    let state = check_term(state, &append.term);
-                    process_append_entries::process_msg(state, append)
+                RaftRpcReq::AppendEntries{addressee, req} => {
+                    let state = check_term(state, &req.term);
+                    process_append_entries::process_msg(state, req)
                 }
 
                 RaftRpcReq::ReqVote(req_vote) => {
@@ -30,14 +30,15 @@ pub fn process_msg<TTypes: Types>(state: State<TTypes>, message: InputMessage<TT
                 RaftRpcResp::AppendEntries { term, success, sender_id } => {
                     match check_term(state, &term) {
                         State::Leader(state) => process_append_entries_response(state, term, success, sender_id),
-                        state => (state, OutputMessage::None)
+                        state => (state, vec![])
                     }
                 }
 
                 RaftRpcResp::RequestVote { term, vote_granted, sender_id } => {
                     match check_term(state, &term){
-                        State::Candidate(state) => process_request_vote_response(state, term, vote_granted, sender_id),
-                        state => (state, OutputMessage::None)
+                        State::Candidate(state) =>
+                            (process_request_vote_response(state, term, vote_granted, sender_id), vec![]),
+                        state => (state, vec![])
                     }
 
                 }
@@ -54,15 +55,18 @@ pub fn process_msg<TTypes: Types>(state: State<TTypes>, message: InputMessage<TT
     (state, msg)
 }
 
+
 fn process_append_entries_response<TTypes: Types>(
     state: Leader<TTypes>,
     term: RaftTerm,
     success: bool,
     follower: NodeId,
 )
-    -> (State<TTypes>, OutputMessage<TTypes>) {
+    -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
+
     todo!()
 }
+
 
 fn process_request_vote_response<TTypes: Types>(
     mut state: Candidate<TTypes>,
@@ -70,7 +74,7 @@ fn process_request_vote_response<TTypes: Types>(
     vote_granted: bool,
     follower: NodeId,
 )
-    -> (State<TTypes>, OutputMessage<TTypes>) {
+    -> State<TTypes> {
 
 
     state.followers_voted.insert(follower);
@@ -78,11 +82,9 @@ fn process_request_vote_response<TTypes: Types>(
     // turn into leader if got enough votes
     if state.followers_voted.len() > state.common_state.common_persistent.cluster_nodes.len() / 2 {
         let leader = state.into();
-        let msg = OutputMessage::RaftReq(RaftRpcReq::AppendEntries(heartbeat_msg(&leader)));
-
-        (State::Leader(leader), msg)
+        State::Leader(leader)
     } else {
-        (State::Candidate(state), OutputMessage::None)
+        State::Candidate(state)
     }
 }
 

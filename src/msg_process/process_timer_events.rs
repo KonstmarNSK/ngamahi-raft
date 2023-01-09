@@ -1,7 +1,7 @@
 use crate::message::{AppendEntriesReq, OutputMessage, RaftRpcReq, RequestVoteReq, TimerMessage};
 use crate::message::OutputMessage::RaftResp;
 use crate::message::RaftRpcResp::RequestVote;
-use crate::state::{Candidate, Follower, Leader, NodeId, State, Types};
+use crate::state::{Candidate, Follower, Leader, LogEntry, NodeId, State, Types};
 
 pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, message: TimerMessage)
                                   -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
@@ -9,27 +9,48 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, message: TimerMessag
 }
 
 
-fn process_heartbeat_trigger<TTypes: Types>(state: &Leader<TTypes>) -> OutputMessage<TTypes> {
+fn process_heartbeat_trigger<TTypes: Types>(state: &Leader<TTypes>) -> Vec<OutputMessage<TTypes>> {
     use crate::msg_process::heartbeat_msg;
 
     let last_log_idx = state.common_state.common_persistent.log.len();
 
     // looking for nodes whose log indexes aren't up-to-date
-    let nodes: Vec<(NodeId, usize)> = state.next_idx.iter()
-        .filter_map(|(&id, &idx)| {
+    let nodes: Vec<OutputMessage<TTypes>> = state.next_idx.iter()
+        .map(|(&id, &idx)| {
+
+            /*
+                if leader thinks that this node's next index is not up-to-date,
+                it sends an appendEntries msg with entries and sends an empty appendEntries otherwise
+                for heartbeat
+             */
             if idx <= last_log_idx {
-                Some((id, idx))
+                // send log entries
+                let entries_to_send = &state.common_state.common_persistent.log[idx..last_log_idx];
+                let entries_to_send = entries_to_send.to_vec();
+
+                OutputMessage::RaftReq(RaftRpcReq::AppendEntries {
+                    addressee: id,
+                    req: AppendEntriesReq {
+                        leader_id: state.common_state.common_persistent.this_node_id,
+                        term: state.common_state.common_persistent.current_term,
+                        leader_commit_idx: state.common_state.common_volatile.committed_idx,
+                        prev_log_idx: state.common_state.common_persistent.log.len(),
+                        prev_log_term: state.common_state.common_persistent.last_msg_term,
+                        entries_to_append: entries_to_send
+                    }
+                })
+
             } else {
-                None
+                OutputMessage::RaftReq(RaftRpcReq::AppendEntries {
+                    addressee: id,
+                    req: heartbeat_msg(state),
+                })
             }
         } )
         .collect();
 
-    todo!()
 
-    // nodes
-    //
-    // OutputMessage::RaftReq(RaftRpcReq::AppendEntries(heartbeat_msg(state)))
+    nodes
 }
 
 

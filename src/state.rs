@@ -19,12 +19,14 @@ pub struct NodeId {
     pub cluster_id: u64,
 }
 
+#[derive(Copy, Clone)]
 pub struct LogEntry<TCmd: Command> {
     pub cmd: TCmd,
     pub term: RaftTerm,
 }
 
-pub trait Command {}
+
+pub trait Command: Copy + Clone {}
 
 pub trait Types: Sized {
     type TCmd: Command;

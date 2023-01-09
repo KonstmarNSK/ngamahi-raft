@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::ops::Add;
 
@@ -13,7 +13,7 @@ impl Add<u64> for RaftTerm {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, Hash, PartialEq)]
 pub struct NodeId {
     pub address: IpAddr,
     pub cluster_id: u64,
@@ -39,9 +39,10 @@ pub struct PersistentCommonState<TTypes: Types> {
     pub voted_for: Option<NodeId>,
     pub log: RaftLog<TTypes>,
 
-    pub last_msg_term: RaftTerm,
     // raft paper doesn't contain this. Here we remember term of last msg in log
+    pub last_msg_term: RaftTerm,
     pub state_machine: TTypes::TStateMachine,
+    pub cluster_nodes: HashSet<NodeId>
 }
 
 impl<TTypes: Types> PersistentCommonState<TTypes> {
@@ -51,7 +52,7 @@ impl<TTypes: Types> PersistentCommonState<TTypes> {
 }
 
 impl<TTypes: Types> PersistentCommonState<TTypes> {
-    fn new(node_id: NodeId, state_machine: TTypes::TStateMachine) -> Self {
+    fn new(node_id: NodeId, others: HashSet<NodeId>, state_machine: TTypes::TStateMachine) -> Self {
         PersistentCommonState {
             this_node_id: node_id,
             current_term: RaftTerm(0),
@@ -60,6 +61,7 @@ impl<TTypes: Types> PersistentCommonState<TTypes> {
 
             last_msg_term: RaftTerm(0),
             state_machine,
+            cluster_nodes: others
         }
     }
 }
@@ -82,7 +84,7 @@ pub enum State<TTypes: Types> {
 }
 
 // underlying state machine (implemented in user code)
-pub trait StateMachine<TTypes: Types + Sized> {
+pub trait StateMachine<TTypes: Types> {
     fn apply_commands(&mut self, commands: &[LogEntry<TTypes::TCmd>]);
 }
 
@@ -95,6 +97,9 @@ pub struct Follower<TTypes: Types> {
 
 pub struct Candidate<TTypes: Types> {
     pub common_state: CommonState<TTypes>,
+
+    // which followers voted for this candidate
+    pub followers_voted: HashSet<NodeId>
 }
 
 pub struct Leader<TTypes: Types> {
@@ -182,7 +187,7 @@ impl<TTypes: Types> Follower<TTypes> {
 
     // todo: must be implemented as From trait
     pub fn into_candidate(self) -> Candidate<TTypes> {
-        Candidate { common_state: self.common_state }
+        Candidate { common_state: self.common_state, followers_voted: Default::default() }
     }
 }
 
@@ -191,6 +196,17 @@ impl<TTypes: Types> CommonState<TTypes> {
         CommonState {
             common_persistent: persisted_state,
             common_volatile: VolatileCommonState::default(),
+        }
+    }
+}
+
+
+impl <TTypes: Types> From<Candidate<TTypes>> for Leader<TTypes> {
+    fn from(candidate: Candidate<TTypes>) -> Self {
+        Leader{
+            common_state: candidate.common_state,
+            next_idx: Default::default(),
+            match_idx: Default::default()
         }
     }
 }

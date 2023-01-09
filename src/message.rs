@@ -6,13 +6,15 @@ pub enum Message<TTypes: Types> {
 }
 
 pub enum InputMessage<TTypes: Types> {
-    RaftMessage(RaftRpcReq<TTypes>),
+    RaftRequest(RaftRpcReq<TTypes>),
+    RaftResponse(RaftRpcResp),
     TimerMsg(TimerMessage)
 }
 
 pub enum OutputMessage<TTypes: Types> {
     RaftReq(RaftRpcReq<TTypes>),
-    RaftResp(RaftRpcResp)
+    RaftResp(RaftRpcResp),
+    None
 }
 
 
@@ -28,8 +30,8 @@ pub enum RaftRpcReq<TTypes: Types> {
 }
 
 pub enum RaftRpcResp {
-    AppendEntries { term: RaftTerm, success: bool },
-    RequestVote { term: RaftTerm, vote_granted: bool },
+    AppendEntries { term: RaftTerm, success: bool, sender_id: NodeId },
+    RequestVote { term: RaftTerm, vote_granted: bool, sender_id: NodeId },
 }
 
 

@@ -1,8 +1,11 @@
 use crate::message::{OutputMessage, RaftRpcResp, RequestVoteReq};
-use crate::state::{RaftLog, RaftTerm, State, Types};
+use crate::state::{NodeId, RaftLog, RaftTerm, State, Types};
 
 pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: RequestVoteReq)
                                   -> (State<TTypes>, OutputMessage<TTypes>) {
+
+    let node_id = state.common().common_persistent.this_node_id;
+
     let curr_term;
 
     // checking term
@@ -22,7 +25,7 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: Request
 
         // if term in message is less than this node's one
         if &curr_term > &message.term {
-            return (state, OutputMessage::RaftResp(reply_false(curr_term)))
+            return (state, OutputMessage::RaftResp(reply_false(curr_term, node_id)))
         }
 
         // if term in message is greater than this node's one
@@ -35,20 +38,20 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: Request
 
     // check if log of sender is up-to-date
     match is_log_up_to_date(&state, &message) {
-        true => (state, OutputMessage::RaftResp(reply_true(curr_term))),
-        false => (state, OutputMessage::RaftResp(reply_false(curr_term)))
+        true => (state, OutputMessage::RaftResp(reply_true(curr_term, node_id))),
+        false => (state, OutputMessage::RaftResp(reply_false(curr_term, node_id)))
     }
 
 
 }
 
 
-fn reply_false(curr_term: RaftTerm) -> RaftRpcResp {
-    RaftRpcResp::RequestVote { term: curr_term, vote_granted: false}
+fn reply_false(curr_term: RaftTerm, sender: NodeId) -> RaftRpcResp {
+    RaftRpcResp::RequestVote { term: curr_term, vote_granted: false, sender_id: sender}
 }
 
-fn reply_true(curr_term: RaftTerm) -> RaftRpcResp {
-    RaftRpcResp::RequestVote { term: curr_term, vote_granted: true}
+fn reply_true(curr_term: RaftTerm, sender: NodeId) -> RaftRpcResp {
+    RaftRpcResp::RequestVote { term: curr_term, vote_granted: true, sender_id: sender}
 }
 
 /// checks whether the msg's sender's log is up to date from this node (receiver's) perspective

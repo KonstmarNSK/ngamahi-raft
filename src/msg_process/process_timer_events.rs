@@ -11,17 +11,10 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, message: TimerMessag
 }
 
 
-fn process_heartbeat_trigger<TTypes: Types>(state: Leader<TTypes>) -> OutputMessage<TTypes> {
-    let msg : AppendEntriesReq<TTypes> = AppendEntriesReq{
-        leader_id: state.common_state.common_persistent.this_node_id,
-        term: state.common_state.common_persistent.current_term,
-        leader_commit_idx: state.common_state.common_volatile.committed_idx,
-        prev_log_idx: state.common_state.common_persistent.log.len(),
-        prev_log_term: state.common_state.common_persistent.last_msg_term,
-        entries_to_append: vec![]
-    };
+fn process_heartbeat_trigger<TTypes: Types>(state: &Leader<TTypes>) -> OutputMessage<TTypes> {
+    use crate::msg_process::heartbeat_msg;
 
-    return OutputMessage::RaftReq(RaftRpcReq::AppendEntries(msg))
+    OutputMessage::RaftReq(RaftRpcReq::AppendEntries(heartbeat_msg(state)))
 }
 
 

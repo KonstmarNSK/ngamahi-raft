@@ -1,4 +1,4 @@
-use crate::message::{AppendEntriesReq, OutputMessage, RaftRpcResp};
+use crate::message::{AppendEntriesReq, AppendEntriesResp, OutputMessage, RaftRpcResp};
 use crate::state::{NodeId, RaftTerm, State, Types};
 use core::cmp::Ordering::*;
 use crate::state::State::*;
@@ -6,7 +6,6 @@ use crate::state::{Leader, Follower, Candidate};
 
 pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendEntriesReq<TTypes>)
                                   -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
-
     let node_id = state.common().common_persistent.this_node_id;
 
     let curr_term;
@@ -28,7 +27,7 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
 
         // if term in message is less than this node's one
         if &curr_term > &message.term {
-            return (state, vec![OutputMessage::RaftResp(reply_false(curr_term, node_id))])
+            return (state, vec![OutputMessage::RaftResp(reply_false(curr_term, 0, node_id))]);
         }
 
         // if term in message is greater than this node's one
@@ -42,8 +41,8 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
     // Reply false if log doesn't contain an entry at prevLogIndex
     // whose term matches prevLogTerm
     match state.common_mut().common_persistent.log.get(message.prev_log_idx) {
-         Some(log_entry) if log_entry.term == message.prev_log_term => (),
-         _ => return (state, vec![OutputMessage::RaftResp(reply_false(curr_term, node_id))])
+        Some(log_entry) if log_entry.term == message.prev_log_term => (),
+        _ => return (state, vec![OutputMessage::RaftResp(reply_false(curr_term, 0, node_id))])
     }
 
     /*
@@ -60,14 +59,14 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
         state.common_mut().common_volatile.committed_idx = message.leader_commit_idx;
     }
 
-    return (state, vec![OutputMessage::RaftResp(reply_true(curr_term, node_id))])
+    return (state, vec![OutputMessage::RaftResp(reply_true(curr_term, message.entries_to_append.len(), node_id))]);
 }
 
 
-fn reply_false(curr_term: RaftTerm, sender: NodeId) -> RaftRpcResp {
-    RaftRpcResp::AppendEntries {  term: curr_term, success: false, sender_id: sender}
+fn reply_false(curr_term: RaftTerm, appended: usize, sender: NodeId) -> RaftRpcResp {
+    RaftRpcResp::AppendEntries(AppendEntriesResp { term: curr_term, appended_entries_count: appended, success: false, sender_id: sender })
 }
 
-fn reply_true(curr_term: RaftTerm, sender: NodeId) -> RaftRpcResp {
-    RaftRpcResp::AppendEntries {   term: curr_term, success: true, sender_id: sender}
+fn reply_true(curr_term: RaftTerm, appended: usize, sender: NodeId) -> RaftRpcResp {
+    RaftRpcResp::AppendEntries(AppendEntriesResp { term: curr_term,  appended_entries_count: appended, success: true, sender_id: sender })
 }

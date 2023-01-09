@@ -1,4 +1,4 @@
-use crate::message::{OutputMessage, RaftRpcResp, RequestVoteReq};
+use crate::message::{OutputMessage, RaftRpcResp, RequestVoteReq, ReqVoteResp};
 use crate::state::{NodeId, RaftLog, RaftTerm, State, Types};
 
 pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: RequestVoteReq)
@@ -47,11 +47,11 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: Request
 
 
 fn reply_false(curr_term: RaftTerm, sender: NodeId) -> RaftRpcResp {
-    RaftRpcResp::RequestVote { term: curr_term, vote_granted: false, sender_id: sender}
+    RaftRpcResp::RequestVote (ReqVoteResp { term: curr_term, vote_granted: false, sender_id: sender})
 }
 
 fn reply_true(curr_term: RaftTerm, sender: NodeId) -> RaftRpcResp {
-    RaftRpcResp::RequestVote { term: curr_term, vote_granted: true, sender_id: sender}
+    RaftRpcResp::RequestVote (ReqVoteResp { term: curr_term, vote_granted: true, sender_id: sender})
 }
 
 /// checks whether the msg's sender's log is up to date from this node (receiver's) perspective

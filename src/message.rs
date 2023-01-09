@@ -8,7 +8,7 @@ pub enum Message<TTypes: Types> {
 pub enum InputMessage<TTypes: Types> {
     RaftRequest(RaftRpcReq<TTypes>),
     RaftResponse(RaftRpcResp),
-    TimerMsg(TimerMessage)
+    TimerMsg(TimerMessage),
 }
 
 pub enum OutputMessage<TTypes: Types> {
@@ -19,18 +19,31 @@ pub enum OutputMessage<TTypes: Types> {
 
 pub enum TimerMessage {
     TriggerHeartbeat,
-    TriggerElections
+    TriggerElections,
 }
 
 
 pub enum RaftRpcReq<TTypes: Types> {
-    AppendEntries{ addressee: NodeId, req: AppendEntriesReq<TTypes>},
-    ReqVote(RequestVoteReq)
+    AppendEntries { addressee: NodeId, req: AppendEntriesReq<TTypes> },
+    ReqVote(RequestVoteReq),
 }
 
 pub enum RaftRpcResp {
-    AppendEntries { term: RaftTerm, success: bool, sender_id: NodeId },
-    RequestVote { term: RaftTerm, vote_granted: bool, sender_id: NodeId },
+    AppendEntries(AppendEntriesResp),
+    RequestVote(ReqVoteResp),
+}
+
+pub struct AppendEntriesResp {
+    pub term: RaftTerm,
+    pub success: bool,
+    pub sender_id: NodeId,
+    pub appended_entries_count: usize,
+}
+
+pub struct ReqVoteResp {
+    pub term: RaftTerm,
+    pub vote_granted: bool,
+    pub sender_id: NodeId,
 }
 
 

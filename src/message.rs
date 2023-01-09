@@ -1,5 +1,10 @@
 use crate::state::{LogEntry, NodeId, RaftTerm, Types};
 
+pub enum Message<TTypes: Types> {
+    Input(InputMessage<TTypes>),
+    Output(OutputMessage<TTypes>),
+}
+
 pub enum InputMessage<TTypes: Types> {
     RaftMessage(RaftRpcReq<TTypes>),
     TimerMsg(TimerMessage)

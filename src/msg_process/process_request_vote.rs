@@ -21,12 +21,12 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: Request
         */
 
         // if term in message is less than this node's one
-        if curr_term > &message.term {
+        if &curr_term > &message.term {
             return (state, OutputMessage::RaftResp(reply_false(curr_term)))
         }
 
         // if term in message is greater than this node's one
-        if curr_term <= &message.term {
+        if &curr_term <= &message.term {
             state = state.into_follower();
             state.common_mut().common_persistent.current_term = message.term;
             state.common_mut().common_persistent.voted_for = None;

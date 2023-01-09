@@ -1,8 +1,17 @@
 use std::collections::HashMap;
 use std::net::IpAddr;
+use std::ops::Add;
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
 pub struct RaftTerm(u64);
+
+impl Add<u64> for RaftTerm {
+    type Output = RaftTerm;
+
+    fn add(self, rhs: u64) -> Self::Output {
+        RaftTerm(rhs + self.0)
+    }
+}
 
 #[derive(Copy, Clone)]
 pub struct NodeId {
@@ -17,7 +26,7 @@ pub struct LogEntry<TCmd: Command> {
 
 pub trait Command {}
 
-pub trait Types {
+pub trait Types: Sized {
     type TCmd: Command;
     type TStateMachine: StateMachine<Self>;
 }
@@ -73,8 +82,8 @@ pub enum State<TTypes: Types> {
 }
 
 // underlying state machine (implemented in user code)
-pub trait StateMachine<TTypes: Types> {
-    fn apply_commands(&mut self, commands: &[TTypes::TCmd]);
+pub trait StateMachine<TTypes: Types + Sized> {
+    fn apply_commands(&mut self, commands: &[LogEntry<TTypes::TCmd>]);
 }
 
 pub struct Follower<TTypes: Types> {
@@ -119,9 +128,7 @@ impl<TTypes: Types> RaftNode<TTypes> {
 
 impl<TTypes: Types> State<TTypes> {
     fn new(node_id: NodeId, persisted_state: PersistentCommonState<TTypes>) -> Self {
-        State {
-            cluster_role: State::Follower(Follower::new(persisted_state))
-        }
+        State::Follower(Follower::new(persisted_state))
     }
 
     pub fn common(&self) -> &CommonState<TTypes> {
@@ -152,7 +159,7 @@ impl<TTypes: Types> State<TTypes> {
                 Follower { common_state: candidate_state.common_state, trigger_election_next_time: true }
             ),
 
-            Self::Follower(_) => Self
+            Self::Follower(_) => self
         }
     }
 

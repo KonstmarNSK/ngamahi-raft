@@ -17,6 +17,7 @@ impl Add<u64> for RaftTerm {
 pub struct NodeId {
     pub address: IpAddr,
     pub cluster_id: u64,
+    pub marks: u16,
 }
 
 #[derive(Copy, Clone)]
@@ -54,7 +55,9 @@ impl<TTypes: Types> PersistentCommonState<TTypes> {
 }
 
 impl<TTypes: Types> PersistentCommonState<TTypes> {
-    fn new(node_id: NodeId, others: HashSet<NodeId>, state_machine: TTypes::TStateMachine) -> Self {
+    pub fn new(node_id: NodeId, mut others: HashSet<NodeId>, state_machine: TTypes::TStateMachine) -> Self {
+        others.extend([node_id]);
+
         PersistentCommonState {
             this_node_id: node_id,
             current_term: RaftTerm(0),

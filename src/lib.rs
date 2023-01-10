@@ -58,30 +58,24 @@ mod tests {
     fn test_nodes() -> (RaftNode<TestTypes>, RaftNode<TestTypes>, RaftNode<TestTypes>) {
         let localhost = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
 
-        let node1_addr = NodeId { address: localhost, cluster_id: 0 };
-        let node2_addr = node1_addr.clone();
-        let node3_addr = node1_addr.clone();
+        let node1_addr = NodeId { address: localhost, cluster_id: 0, marks: 1 };
+        let node2_addr = NodeId {marks: 2, ..node1_addr};
+        let node3_addr = NodeId {marks: 3, ..node1_addr};
 
 
-        let node1 = RaftNode::new(params(node3_addr, vec![node2_addr, node3_addr]));
-        let node2 = RaftNode::new(params(node3_addr, vec![node1_addr, node3_addr]));
+        let node1 = RaftNode::new(params(node1_addr, vec![node2_addr, node3_addr]));
+        let node2 = RaftNode::new(params(node2_addr, vec![node1_addr, node3_addr]));
         let node3 = RaftNode::new(params(node3_addr, vec![node2_addr, node1_addr]));
 
 
         return (node1, node2, node3);
 
         fn params(node: NodeId, mut others: Vec<NodeId>) -> InitParams<TestTypes> {
-            others.push(node);
-
-            let state = PersistentCommonState {
-                this_node_id: node,
-                current_term: RaftTerm(0),
-                voted_for: None,
-                log: vec![],
-                last_msg_term: RaftTerm(0),
-                state_machine: TestStateMachine,
-                cluster_nodes: HashSet::from_iter(others),
-            };
+            let state = PersistentCommonState::new(
+                node, 
+                HashSet::from_iter(others),
+                TestStateMachine
+            );
 
             InitParams {
                 persisted_state: state,
@@ -191,10 +185,7 @@ mod tests {
 
         match &node1.state.as_ref().unwrap() {
             State::Leader(leader) => (),
-            State::Candidate(candidate) => (),
-            State::Follower(fol) => {
-                println!("Follower!")
-            },
+            _ => assert!(false)
         };
     }
 }

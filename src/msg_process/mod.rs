@@ -108,7 +108,7 @@ fn check_term<TTypes: Types>(mut state: State<TTypes>, msg_term: &RaftTerm) -> S
     let curr_term = state_common.common_persistent.current_term;
 
     // if term in message is greater than this node's one
-    if curr_term <= *msg_term {
+    if curr_term < *msg_term {
         state = state.into_follower();
         state.common_mut().common_persistent.current_term = msg_term.clone();
         state.common_mut().common_persistent.voted_for = None;

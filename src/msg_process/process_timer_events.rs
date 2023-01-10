@@ -5,7 +5,26 @@ use crate::state::{Candidate, Follower, Leader, LogEntry, NodeId, State, Types};
 
 pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, message: TimerMessage)
                                   -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
-    todo!()
+    match message {
+        TimerMessage::TriggerElections => {
+            match state {
+                State::Follower(follower) => process_election_trigger(FollowerOrCandidate::Follower(follower)),
+                State::Candidate(candidate) => process_election_trigger(FollowerOrCandidate::Candidate(candidate)),
+                State::Leader(leader) => (State::Leader(leader), vec![]),
+            }
+        },
+
+        TimerMessage::TriggerHeartbeat => {
+            match state {
+                State::Leader(leader) => {
+                    let out_msg =  process_heartbeat_trigger(&leader);
+                    (State::Leader(leader), out_msg)
+                },
+
+                state => (state, vec![]),
+            }
+        }
+    }
 }
 
 
@@ -17,7 +36,6 @@ fn process_heartbeat_trigger<TTypes: Types>(state: &Leader<TTypes>) -> Vec<Outpu
     // looking for nodes whose log indexes aren't up-to-date
     let nodes: Vec<OutputMessage<TTypes>> = state.next_idx.iter()
         .map(|(&id, &idx)| {
-
             /*
                 if leader thinks that this node's next index is not up-to-date,
                 it sends an appendEntries msg with entries and sends an empty appendEntries otherwise
@@ -36,17 +54,16 @@ fn process_heartbeat_trigger<TTypes: Types>(state: &Leader<TTypes>) -> Vec<Outpu
                         leader_commit_idx: state.common_state.common_volatile.committed_idx,
                         prev_log_idx: state.common_state.common_persistent.log.len(),
                         prev_log_term: state.common_state.common_persistent.last_msg_term,
-                        entries_to_append: entries_to_send
-                    }
+                        entries_to_append: entries_to_send,
+                    },
                 })
-
             } else {
                 OutputMessage::RaftReq(RaftRpcReq::AppendEntries {
                     addressee: id,
                     req: heartbeat_msg(state),
                 })
             }
-        } )
+        })
         .collect();
 
 
@@ -59,7 +76,7 @@ enum FollowerOrCandidate<TTypes: Types> {
     Candidate(Candidate<TTypes>),
 }
 
-fn process_election_trigger<TTypes: Types>(state: FollowerOrCandidate<TTypes>) -> (State<TTypes>, OutputMessage<TTypes>) {
+fn process_election_trigger<TTypes: Types>(state: FollowerOrCandidate<TTypes>) -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
     use FollowerOrCandidate::*;
 
     match state {
@@ -69,7 +86,7 @@ fn process_election_trigger<TTypes: Types>(state: FollowerOrCandidate<TTypes>) -
 }
 
 // todo: add pre-vote step
-fn follower_elect<TTypes: Types>(state: Follower<TTypes>) -> (State<TTypes>, OutputMessage<TTypes>) {
+fn follower_elect<TTypes: Types>(state: Follower<TTypes>) -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
     // convert to a candidate
     let mut state = state.into_candidate();
 
@@ -77,7 +94,7 @@ fn follower_elect<TTypes: Types>(state: Follower<TTypes>) -> (State<TTypes>, Out
     start_election(state)
 }
 
-fn start_election<TTypes: Types>(mut state: Candidate<TTypes>) -> (State<TTypes>, OutputMessage<TTypes>) {
+fn start_election<TTypes: Types>(mut state: Candidate<TTypes>) -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
     use crate::message::RaftRpcReq::ReqVote;
 
     /*
@@ -103,5 +120,5 @@ fn start_election<TTypes: Types>(mut state: Candidate<TTypes>) -> (State<TTypes>
         last_log_term,
     });
 
-    return (State::Candidate(state), OutputMessage::RaftReq(req_vote_msg));
+    return (State::Candidate(state), vec![OutputMessage::RaftReq(req_vote_msg)]);
 }

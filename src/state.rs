@@ -3,7 +3,7 @@ use std::net::IpAddr;
 use std::ops::Add;
 
 #[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
-pub struct RaftTerm(u64);
+pub struct RaftTerm(pub u64);
 
 impl Add<u64> for RaftTerm {
     type Output = RaftTerm;
@@ -122,13 +122,13 @@ pub struct InitParams<TTypes: Types> {
 
 
 pub struct RaftNode<TTypes: Types> {
-    pub state: State<TTypes>,
+    pub state: Option<State<TTypes>>,
 }
 
 impl<TTypes: Types> RaftNode<TTypes> {
-    pub fn new(node_id: NodeId, mut params: InitParams<TTypes>) -> Self {
+    pub fn new(mut params: InitParams<TTypes>) -> Self {
         RaftNode {
-            state: State::new(node_id, params.persisted_state)
+            state: Some(State::new(params.node_id, params.persisted_state))
         }
     }
 }

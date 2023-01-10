@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::ops::Add;
 
-#[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone)]
+#[derive(Ord, PartialOrd, Eq, PartialEq, Copy, Clone, Debug)]
 pub struct RaftTerm(pub u64);
 
 impl Add<u64> for RaftTerm {
@@ -13,7 +13,7 @@ impl Add<u64> for RaftTerm {
     }
 }
 
-#[derive(Copy, Clone, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Eq, Hash, PartialEq, Debug)]
 pub struct NodeId {
     pub address: IpAddr,
     pub cluster_id: u64,

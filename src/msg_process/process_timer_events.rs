@@ -108,6 +108,7 @@ fn start_election<TTypes: Types>(mut state: Candidate<TTypes>) -> (State<TTypes>
     let new_term = state.common_state.common_persistent.current_term + 1;
 
     state.common_state.common_persistent.voted_for = Some(this_node_id);
+    state.followers_voted.insert(state.common_state.common_persistent.this_node_id);
     state.common_state.common_persistent.current_term = new_term;
 
     let last_log_index = state.common_state.common_persistent.log.len();

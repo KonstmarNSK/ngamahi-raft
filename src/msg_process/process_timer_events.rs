@@ -28,7 +28,7 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, message: TimerMessag
 }
 
 
-fn process_heartbeat_trigger<TTypes: Types>(state: &Leader<TTypes>) -> Vec<OutputMessage<TTypes>> {
+pub fn process_heartbeat_trigger<TTypes: Types>(state: &Leader<TTypes>) -> Vec<OutputMessage<TTypes>> {
     use crate::msg_process::heartbeat_msg;
 
     let last_log_idx = state.common_state.common_persistent.log.len();

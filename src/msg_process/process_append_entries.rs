@@ -59,6 +59,11 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
         state.common_mut().common_volatile.committed_idx = message.leader_commit_idx;
     }
 
+    // remember term of last message in log
+    if let Some(entry) = state.common().common_persistent.log.last() {
+        state.common_mut().common_persistent.last_msg_term = entry.term;
+    };
+
     return (state, vec![OutputMessage::RaftResp(reply_true(curr_term, message.entries_to_append.len(), node_id))]);
 }
 

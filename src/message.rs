@@ -11,12 +11,29 @@ pub enum InputMessage<TTypes: Types> {
     RaftRequest(RaftRpcReq<TTypes>),
     RaftResponse(RaftRpcResp),
     TimerMsg(TimerMessage),
+    // when client wants to add a new command in log it sends this message to one of raft nodes
+    ClientMsg(ClientMessageReq<TTypes>),
 }
 
 #[derive(Clone)]
 pub enum OutputMessage<TTypes: Types> {
     RaftReq(RaftRpcReq<TTypes>),
     RaftResp(RaftRpcResp),
+    ClientMsg(ClientMessageResp),
+}
+
+#[derive(Clone)]
+pub struct ClientMessageReq<TTypes: Types>{
+    pub entries_to_add: Vec<TTypes::TCmd>,
+    pub unique_request_id: u128,
+}
+
+// if this node wasn't a leader, the success is false and leader_address contains a known leader address
+#[derive(Clone)]
+pub struct ClientMessageResp{
+    pub success: bool,
+    pub leader_address: Option<NodeId>,
+    pub unique_request_id: u128,
 }
 
 #[derive(Clone)]

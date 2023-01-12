@@ -75,6 +75,7 @@ impl<TTypes: Types> PersistentCommonState<TTypes> {
 pub struct VolatileCommonState {
     pub committed_idx: usize,
     pub last_applied: usize,
+    pub known_leader: Option<NodeId>,
 }
 
 pub struct CommonState<TTypes: Types> {
@@ -183,6 +184,10 @@ impl<TTypes: Types> State<TTypes> {
 
         self.common_mut().common_volatile.last_applied = end;
     }
+
+    pub fn add_to_log(&mut self, entries: &[LogEntry<TTypes::TCmd>]) {
+        todo!()
+    }
 }
 
 impl<TTypes: Types> Follower<TTypes> {
@@ -208,10 +213,25 @@ impl<TTypes: Types> CommonState<TTypes> {
 
 impl <TTypes: Types> From<Candidate<TTypes>> for Leader<TTypes> {
     fn from(candidate: Candidate<TTypes>) -> Self {
+        let next_idx: HashMap<NodeId, usize> = candidate.common_state.common_persistent.cluster_nodes.iter()
+            .filter_map(|&node_id| 
+                {
+                    if node_id != candidate.common_state.common_persistent.this_node_id {
+                        Some((node_id, 0))
+                    } else {
+                        None
+                    }
+                }
+            ).collect();
+
+        let match_idx: HashMap<NodeId, usize> = next_idx.iter()
+            .map(|(&id, _)| (id, candidate.common_state.common_persistent.log.len()))
+            .collect();
+
         Leader{
             common_state: candidate.common_state,
-            next_idx: Default::default(),
-            match_idx: Default::default()
+            next_idx,
+            match_idx,
         }
     }
 }

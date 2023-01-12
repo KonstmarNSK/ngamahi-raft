@@ -27,7 +27,7 @@ mod tests {
     use OutputMessage as Out;
     use std::collections::HashSet;
     use std::net::{IpAddr, Ipv4Addr};
-    use crate::message::{InputMessage, OutputMessage, RaftRpcReq, RaftRpcResp, RequestVoteReq, TimerMessage};
+    use crate::message::{ClientMessageReq, InputMessage, OutputMessage, RaftRpcReq, RaftRpcResp, RequestVoteReq, TimerMessage};
     use crate::state::{Command, InitParams, LogEntry, NodeId, PersistentCommonState, RaftNode, RaftTerm, State, StateMachine, Types};
 
     #[derive(Clone)]
@@ -187,5 +187,57 @@ mod tests {
             State::Leader(leader) => (),
             _ => assert!(false)
         };
+    }
+
+
+    #[test]
+    fn log_replicates() {
+        let (mut node1, mut node2, mut node3) = test_nodes();
+        let trigger_election_msg = In::TimerMsg(TimerMessage::TriggerElections);
+        let mut req_vote_msg = node1.process_message(trigger_election_msg);
+        let req_vote_msg = req_vote_msg.remove(0);
+
+        let req_vote_msg: In<TestTypes> = match req_vote_msg {
+            Out::RaftReq(req) => In::RaftRequest(req),
+            _ => {
+                assert!(false);
+                unreachable!()
+            }
+        };
+
+        let mut node2_response = node2.process_message(req_vote_msg.clone());
+        let mut node3_response = node3.process_message(req_vote_msg);
+
+        assert_eq!(node2_response.len(), 1);
+        assert_eq!(node3_response.len(), 1);
+
+        let node2_response = node2_response.remove(0);
+        let node3_response = node3_response.remove(0);
+
+        let (node3_response_in, node2_response_in) : (In<TestTypes>, In<TestTypes>) =
+            match (node2_response, node3_response) {
+                (Out::RaftResp(resp2), Out::RaftResp(resp3)) => {
+                    (In::RaftResponse(resp2), In::RaftResponse(resp3))
+                }
+
+                _ => {
+                    assert!(false);
+                    unreachable!()
+                }
+            };
+
+        // here node1 becomes a leader
+        node1.process_message(node2_response_in).len();
+        node1.process_message(node3_response_in).len();
+
+        let client_msg = In::ClientMsg(ClientMessageReq{
+            entries_to_add: vec![12, 25],
+            unique_request_id: 17
+        });
+
+        let result = node1.process_message(client_msg);
+
+        assert_eq!(result.len(), 2)
+
     }
 }

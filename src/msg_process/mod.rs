@@ -13,12 +13,10 @@ pub fn process_msg<TTypes: Types>(state: State<TTypes>, message: InputMessage<TT
         InputMessage::RaftRequest(req) => {
             match req {
                 RaftRpcReq::AppendEntries { addressee, req } => {
-                    let state = check_term(state, &req.term);
                     process_append_entries::process_msg(state, req)
                 }
 
                 RaftRpcReq::ReqVote(req_vote) => {
-                    let state = check_term(state, &req_vote.term);
                     process_request_vote::process_msg(state, req_vote)
                 }
             }
@@ -186,22 +184,6 @@ fn process_request_vote_response<TTypes: Types>(
     } else {
         State::Candidate(state)
     }
-}
-
-
-/// turns state to a follower if this node's term is lower than one in message
-fn check_term<TTypes: Types>(mut state: State<TTypes>, msg_term: &RaftTerm) -> State<TTypes> {
-    let state_common = state.common();
-    let curr_term = state_common.common_persistent.current_term;
-
-    // if term in message is greater than this node's one
-    if curr_term < *msg_term {
-        state = state.into_follower();
-        state.common_mut().common_persistent.current_term = msg_term.clone();
-        state.common_mut().common_persistent.voted_for = None;
-    }
-
-    return state;
 }
 
 pub fn heartbeat_msg<TTypes: Types>(state: &Leader<TTypes>) -> AppendEntriesReq<TTypes> {

@@ -1,6 +1,8 @@
 use crate::message::{AppendEntriesReq, AppendEntriesResp, OutputMessage, RaftRpcResp};
 use crate::state::{NodeId, RaftTerm, State, Types};
 use core::cmp::Ordering::*;
+use std::cmp::Ordering;
+use std::fmt::format;
 use crate::state::State::*;
 use crate::state::{Leader, Follower, Candidate};
 
@@ -15,34 +17,91 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
         Any node that gets a message AppendEntriesReq either ignores it due to its term or
         will process it as a follower (if the node wasn't a follower, it becomes a follower.)
      */
-    {
-        let state_common = state.common();
-        curr_term = state_common.common_persistent.current_term;
+    let state_common = state.common();
+    curr_term = state_common.common_persistent.current_term;
+
+    let mut follower = match state {
+        Leader(mut leader) => {
+            match curr_term.cmp(&message.term) {
+                Greater => {
+                    return (
+                        State::Leader(leader),
+                        vec![OutputMessage::RaftResp(reply_false(curr_term, 0, node_id))]
+                    );
+                }
+
+                Less => {
+                    leader.common_state.common_persistent.current_term = message.term;
+                    leader.common_state.common_persistent.voted_for = None;
+
+                    Follower::from(leader)
+                },
+
+                Equal => panic!("{}", format!(
+                    "Two leaders in one term!!! Term: {:?}, leaders: {:?} and {:?}. Probably this raft algorithm implementation is broken.",
+                    state.common().common_persistent.current_term,
+                    state.common().common_persistent.this_node_id,
+                    message.leader_id
+                ))
+            }
+        }
 
         /*
-            todo: check special case: 2 or more leaders have same term.
-                  It would mean that there is a mistake in the algorithm or its implementation
-                  => this implementation of raft doesn't guarantee anything.
+         AppendEntries rpc can be sent only by a leader.
+         If a candidate gets such message with term same as its own, it immediately becomes
+         a follower because there's an existing leader.
         */
+        Candidate(mut candidate) => {
+            match curr_term.cmp(&message.term) {
+                Less | Equal => {
+                    candidate.common_state.common_persistent.current_term = message.term;
+                    candidate.common_state.common_persistent.voted_for = None;
 
-        // if term in message is less than this node's one
-        if &curr_term > &message.term {
-            return (state, vec![OutputMessage::RaftResp(reply_false(curr_term, 0, node_id))]);
+                    Follower::from(candidate)
+                },
+
+                Greater => return (
+                    State::Candidate(candidate),
+                    vec![OutputMessage::RaftResp(reply_false(curr_term, 0, node_id))]
+                )
+            }
         }
 
-        // if term in message is greater than this node's one
-        if &curr_term <= &message.term {
-            state = state.into_follower();
-            state.common_mut().common_persistent.current_term = message.term;
-            state.common_mut().common_persistent.voted_for = None;
+        Follower(mut follower) => {
+            match curr_term.cmp(&message.term) {
+                Less => {
+                    follower.common_state.common_persistent.current_term = message.term;
+                    follower.common_state.common_persistent.voted_for = None;
+                }
+
+                Greater => return (
+                    State::Follower(follower),
+                    vec![OutputMessage::RaftResp(reply_false(curr_term, 0, node_id))]
+                ),
+
+                Equal => ()
+            };
+
+
+
+            follower
         }
-    }
+    };
+
+    // recently (now) got AppendEntries rpc from viable leader, so don't start election next time timer triggers it
+    follower.trigger_election_next_time = false;
+
+    follower.common_state.common_volatile.known_leader = Some(message.leader_id);
+
 
     // Reply false if log doesn't contain an entry at prevLogIndex
     // whose term matches prevLogTerm
-    match state.common_mut().common_persistent.log.get(message.prev_log_idx) {
+    match follower.common_state.common_persistent.log.get(message.prev_log_idx) {
         Some(log_entry) if log_entry.term == message.prev_log_term => (),
-        _ => return (state, vec![OutputMessage::RaftResp(reply_false(curr_term, 0, node_id))])
+        _ => return (
+            State::Follower(follower),
+            vec![OutputMessage::RaftResp(reply_false(curr_term, 0, node_id))]
+        )
     }
 
     /*
@@ -52,19 +111,22 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
         Append any new entries not already in the log
      */
 
-    state.common_mut().common_persistent.log.truncate(message.prev_log_idx + 1);
-    state.common_mut().common_persistent.log.append(&mut message.entries_to_append);
+    follower.common_state.common_persistent.log.truncate(message.prev_log_idx + 1);
+    follower.common_state.common_persistent.log.append(&mut message.entries_to_append);
 
-    if message.leader_commit_idx > state.common().common_volatile.committed_idx {
-        state.common_mut().common_volatile.committed_idx = message.leader_commit_idx;
+    if message.leader_commit_idx > follower.common_state.common_volatile.committed_idx {
+        follower.common_state.common_volatile.committed_idx = message.leader_commit_idx;
     }
 
     // remember term of last message in log
-    if let Some(entry) = state.common().common_persistent.log.last() {
-        state.common_mut().common_persistent.last_msg_term = entry.term;
+    if let Some(entry) = follower.common_state.common_persistent.log.last() {
+        follower.common_state.common_persistent.last_msg_term = entry.term;
     };
 
-    return (state, vec![OutputMessage::RaftResp(reply_true(curr_term, message.entries_to_append.len(), node_id))]);
+    return (
+        State::Follower(follower),
+        vec![OutputMessage::RaftResp(reply_true(curr_term, message.entries_to_append.len(), node_id))]
+    );
 }
 
 
@@ -73,5 +135,5 @@ fn reply_false(curr_term: RaftTerm, appended: usize, sender: NodeId) -> RaftRpcR
 }
 
 fn reply_true(curr_term: RaftTerm, appended: usize, sender: NodeId) -> RaftRpcResp {
-    RaftRpcResp::AppendEntries(AppendEntriesResp { term: curr_term,  appended_entries_count: appended, success: true, sender_id: sender })
+    RaftRpcResp::AppendEntries(AppendEntriesResp { term: curr_term, appended_entries_count: appended, success: true, sender_id: sender })
 }

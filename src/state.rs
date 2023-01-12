@@ -45,7 +45,7 @@ pub struct PersistentCommonState<TTypes: Types> {
     // raft paper doesn't contain this. Here we remember term of last msg in log
     pub last_msg_term: RaftTerm,
     pub state_machine: TTypes::TStateMachine,
-    pub cluster_nodes: HashSet<NodeId>
+    pub cluster_nodes: HashSet<NodeId>,
 }
 
 impl<TTypes: Types> PersistentCommonState<TTypes> {
@@ -66,7 +66,7 @@ impl<TTypes: Types> PersistentCommonState<TTypes> {
 
             last_msg_term: RaftTerm(0),
             state_machine,
-            cluster_nodes: others
+            cluster_nodes: others,
         }
     }
 }
@@ -105,7 +105,7 @@ pub struct Candidate<TTypes: Types> {
     pub common_state: CommonState<TTypes>,
 
     // which followers voted for this candidate
-    pub followers_voted: HashSet<NodeId>
+    pub followers_voted: HashSet<NodeId>,
 }
 
 pub struct Leader<TTypes: Types> {
@@ -160,17 +160,22 @@ impl<TTypes: Types> State<TTypes> {
     }
 
     // fixme: must be implemented as From trait
-    pub fn into_follower(self) -> Self {
+    pub fn into_follower(self) -> Follower<TTypes> {
         match self {
-            Self::Leader(leader_state) => Self::Follower(
+            Self::Leader(mut leader_state) => {
+
+
                 Follower { common_state: leader_state.common_state, trigger_election_next_time: true }
-            ),
+            },
 
-            Self::Candidate(candidate_state) => Self::Follower(
+            Self::Candidate(mut candidate_state) => {
+                candidate_state.common_state.common_persistent.current_term = message.term;
+                candidate_state.common_state.common_persistent.voted_for = None;
+
                 Follower { common_state: candidate_state.common_state, trigger_election_next_time: true }
-            ),
+            },
 
-            Self::Follower(_) => self
+            Self::Follower(follower) => follower
         }
     }
 
@@ -211,10 +216,10 @@ impl<TTypes: Types> CommonState<TTypes> {
 }
 
 
-impl <TTypes: Types> From<Candidate<TTypes>> for Leader<TTypes> {
+impl<TTypes: Types> From<Candidate<TTypes>> for Leader<TTypes> {
     fn from(candidate: Candidate<TTypes>) -> Self {
         let next_idx: HashMap<NodeId, usize> = candidate.common_state.common_persistent.cluster_nodes.iter()
-            .filter_map(|&node_id| 
+            .filter_map(|&node_id|
                 {
                     if node_id != candidate.common_state.common_persistent.this_node_id {
                         Some((node_id, 0))
@@ -228,10 +233,22 @@ impl <TTypes: Types> From<Candidate<TTypes>> for Leader<TTypes> {
             .map(|(&id, _)| (id, candidate.common_state.common_persistent.log.len()))
             .collect();
 
-        Leader{
+        Leader {
             common_state: candidate.common_state,
             next_idx,
             match_idx,
         }
+    }
+}
+
+impl <TTypes: Types> From<Candidate<TTypes>> for Follower<TTypes> {
+    fn from(candidate: Candidate<TTypes>) -> Self {
+        Follower { common_state: candidate.common_state, trigger_election_next_time: true }
+    }
+}
+
+impl <TTypes: Types> From<Leader<TTypes>> for Follower<TTypes> {
+    fn from(leader: Leader<TTypes>) -> Self {
+        Follower { common_state: leader.common_state, trigger_election_next_time: true }
     }
 }

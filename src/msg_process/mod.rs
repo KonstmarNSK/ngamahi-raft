@@ -8,7 +8,6 @@ mod process_timer_events;
 
 pub fn process_msg<TTypes: Types>(state: State<TTypes>, message: InputMessage<TTypes>)
                                   -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
-
     let (mut state, msg) = match message {
         InputMessage::RaftRequest(req) => {
             match req {
@@ -25,27 +24,11 @@ pub fn process_msg<TTypes: Types>(state: State<TTypes>, message: InputMessage<TT
         InputMessage::RaftResponse(resp) => {
             match resp {
                 RaftRpcResp::AppendEntries(append) => {
-                    match check_term(state, &append.term) {
-                        State::Leader(state) =>
-                            process_append_entries_response(
-                                state,
-                                append,
-                            ),
-
-                        state => (state, vec![])
-                    }
+                    process_append_entries_response_common(state, append)
                 }
 
                 RaftRpcResp::RequestVote(req_vote) => {
-                    match check_term(state, &req_vote.term) {
-                        State::Candidate(state) =>
-                            (process_request_vote_response(
-                                state,
-                                req_vote,
-                            ), vec![]),
-
-                        state => (state, vec![])
-                    }
+                    process_request_vote_response_common(state, req_vote)
                 }
             }
         }
@@ -92,13 +75,13 @@ fn client_resp_false<TTypes: Types>(req_uid: u128, leader: Option<NodeId>) -> Cl
 
 
 fn process_client_request<TTypes: Types>(mut state: Leader<TTypes>, mut req: ClientMessageReq<TTypes>)
-    -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
+                                         -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
 
     // add entries to local (leader's) log:
     state.common_state.common_persistent.log.append(
         &mut req.entries_to_add.iter()
             .map(|&entry|
-                LogEntry{term: state.common_state.common_persistent.current_term, cmd: entry}
+                LogEntry { term: state.common_state.common_persistent.current_term, cmd: entry }
             )
             .collect()
     );
@@ -109,7 +92,25 @@ fn process_client_request<TTypes: Types>(mut state: Leader<TTypes>, mut req: Cli
     (State::Leader(state), append_entries)
 }
 
-// fixme: committed_idx update
+
+fn process_append_entries_response_common<TTypes: Types>(
+    state: State<TTypes>,
+    resp: AppendEntriesResp,
+)
+    -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
+
+    match state {
+        State::Leader(leader)
+        if leader.common_state.common_persistent.current_term == resp.term =>
+            process_append_entries_response(
+                leader,
+                resp,
+            ),
+
+        state => (state, vec![])
+    }
+}
+
 fn process_append_entries_response<TTypes: Types>(
     mut state: Leader<TTypes>,
     resp: AppendEntriesResp,
@@ -146,8 +147,8 @@ fn process_append_entries_response<TTypes: Types>(
                         most of nodes have
                      */
                     match_indexes.sort();
-                    let biggest_match_idx =  match_indexes.iter().rev()
-                        .take((match_indexes.len()/2) + 1)
+                    let biggest_match_idx = match_indexes.iter().rev()
+                        .take((match_indexes.len() / 2) + 1)
                         .min();
 
                     if let Some(&match_idx) = biggest_match_idx {
@@ -155,7 +156,7 @@ fn process_append_entries_response<TTypes: Types>(
                             state.common_state.common_volatile.committed_idx = match_idx;
                         }
                     }
-                },
+                }
 
                 _ => (),
             };
@@ -169,6 +170,22 @@ fn process_append_entries_response<TTypes: Types>(
     (State::Leader(state), vec![])
 }
 
+fn process_request_vote_response_common<TTypes: Types>(
+    mut state: State<TTypes>,
+    resp: ReqVoteResp,
+)
+    -> (State<TTypes>, Vec<OutputMessage<TTypes>>) {
+
+    match state {
+        State::Candidate(candidate) if candidate.common_state.common_persistent.current_term == resp.term =>
+            (process_request_vote_response(
+                candidate,
+                resp,
+            ), vec![]),
+
+        state => (state, vec![])
+    }
+}
 
 fn process_request_vote_response<TTypes: Types>(
     mut state: Candidate<TTypes>,

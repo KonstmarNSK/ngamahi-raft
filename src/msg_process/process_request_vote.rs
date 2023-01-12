@@ -8,7 +8,7 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: Request
     let node_id = state.common().common_persistent.this_node_id;
     let curr_term = state.common().common_persistent.current_term;
 
-    let follower = match state {
+    let mut follower = match state {
         State::Leader(leader) => {
             match curr_term.cmp(&message.term) {
                 Greater | Equal => return (
@@ -16,7 +16,7 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: Request
                     vec![OutputMessage::RaftResp(reply_false(curr_term, node_id))]
                 ),
 
-                Less => state.into_follower()
+                Less => Follower::from(leader)
             }
         }
 
@@ -27,7 +27,7 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: Request
                     vec![OutputMessage::RaftResp(reply_false(curr_term, node_id))]
                 ),
 
-                Less => state.into_follower()
+                Less => Follower::from(candidate)
             }
         }
 
@@ -46,7 +46,11 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: Request
 
     // check if log of sender is up-to-date
     match is_log_up_to_date(&follower, &message) {
-        true => (State::Follower(follower), vec![OutputMessage::RaftResp(reply_true(curr_term, node_id))]),
+        true => {
+            follower.common_state.common_persistent.voted_for = Some(message.candidate_id);
+
+            (State::Follower(follower), vec![OutputMessage::RaftResp(reply_true(curr_term, node_id))])
+        },
         false => (State::Follower(follower), vec![OutputMessage::RaftResp(reply_false(curr_term, node_id))])
     }
 }

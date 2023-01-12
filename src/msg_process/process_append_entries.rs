@@ -39,8 +39,8 @@ pub fn process_msg<TTypes: Types>(mut state: State<TTypes>, mut message: AppendE
 
                 Equal => panic!("{}", format!(
                     "Two leaders in one term!!! Term: {:?}, leaders: {:?} and {:?}. Probably this raft algorithm implementation is broken.",
-                    state.common().common_persistent.current_term,
-                    state.common().common_persistent.this_node_id,
+                    curr_term,
+                    node_id,
                     message.leader_id
                 ))
             }

@@ -159,26 +159,6 @@ impl<TTypes: Types> State<TTypes> {
         }
     }
 
-    // fixme: must be implemented as From trait
-    pub fn into_follower(self) -> Follower<TTypes> {
-        match self {
-            Self::Leader(mut leader_state) => {
-
-
-                Follower { common_state: leader_state.common_state, trigger_election_next_time: true }
-            },
-
-            Self::Candidate(mut candidate_state) => {
-                candidate_state.common_state.common_persistent.current_term = message.term;
-                candidate_state.common_state.common_persistent.voted_for = None;
-
-                Follower { common_state: candidate_state.common_state, trigger_election_next_time: true }
-            },
-
-            Self::Follower(follower) => follower
-        }
-    }
-
     pub fn apply_commands(&mut self) {
         let start = self.common().common_volatile.last_applied;
         let end = self.common().common_volatile.committed_idx;
